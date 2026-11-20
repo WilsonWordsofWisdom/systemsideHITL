@@ -1,6 +1,6 @@
 # Implementation plan
 
-Derived from `doc/HITL-prototype-build-spec.md` §12. Each step lists its verification. Test-first for the enforcement core. Security hard rules apply throughout (no secrets in git, `.env.example` only, pin CI actions).
+Derived from `ref/HITL-prototype-build-spec.md` §12. Each step lists its verification. Test-first for the enforcement core. Security hard rules apply throughout (no secrets in git, `.env.example` only, pin CI actions).
 
 ## Prerequisites (owner decisions needed)
 

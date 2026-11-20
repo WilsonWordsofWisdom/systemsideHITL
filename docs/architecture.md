@@ -1,6 +1,6 @@
 # Architecture: System-side HITL prototype ("DemoGov Permits")
 
-Source: `doc/HITL-prototype-build-spec.md`. Status: **draft, awaiting owner sign-off**.
+Source: `ref/HITL-prototype-build-spec.md`. Status: **draft, awaiting owner sign-off**.
 
 ## 1. Shape
 
