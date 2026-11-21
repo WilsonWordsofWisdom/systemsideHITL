@@ -73,9 +73,10 @@ export async function seed(db: SeedDb, password: string | undefined) {
 
 async function main() {
   const { config } = await import("dotenv");
-  config();
-  const url = process.env.DIRECT_DATABASE_URL;
-  if (!url) throw new Error("DIRECT_DATABASE_URL is required to seed");
+  config({ path: [".env.local", ".env"], quiet: true });
+  const { directDatabaseUrl } = await import("../lib/db/urls");
+  const url = directDatabaseUrl();
+  if (!url) throw new Error("DIRECT_DATABASE_URL or POSTGRES_URL_NON_POOLING is required to seed");
   const { createDb } = await import("../lib/db/client");
   const { db, close } = createDb(url);
   try {
