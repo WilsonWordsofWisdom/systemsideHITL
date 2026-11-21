@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* Material 3 colour tokens from docs/design.md section 2.1 (light theme only). */
+@theme {
+  --color-primary: #0b5e6b;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #cde8ec;
+  --color-on-primary-container: #002025;
+  --color-secondary-container: #cde7ec;
+  --color-on-secondary-container: #051f23;
+  --color-surface: #f8fafa;
+  --color-surface-container: #ecefef;
+  --color-surface-container-high: #e3e7e7;
+  --color-on-surface: #191c1d;
+  --color-on-surface-variant: #3f484a;
+  --color-outline: #6f797a;
+  --color-outline-variant: #bfc8ca;
+  --color-error: #b3261e;
+  --color-error-container: #f9dedc;
+  --color-on-error-container: #410e0b;
+  --color-success-container: #c8ebcf;
+  --color-on-success-container: #002109;
+  --color-warning-container: #ffe08a;
+  --color-on-warning-container: #3a2e00;
+  --color-info-container: #d6e3ff;
+  --color-on-info-container: #001b3e;
+
+  --font-sans: Roboto, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

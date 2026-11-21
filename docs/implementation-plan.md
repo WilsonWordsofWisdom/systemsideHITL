@@ -27,6 +27,8 @@ Reviewed and signed off by the owner before any code is written. **Status (2026-
 
 ## Phase 0: Scaffold
 
+**Status (2026-11-22):** steps 1, 2 and 4 done and verified on `feature/phase-0-scaffold`. Step 3 waits for the owner to re-link the Vercel project to `systemsideHITL` and merge the Phase 0 PR.
+
 1. Next.js + TS + Tailwind + Vitest + Playwright; ESLint/Prettier; `.env.example`. → verify: lint, typecheck and test commands pass on empty app.
 2. Drizzle schema (spec §5) + migrations. `sessions` also gets `signin_method`, `login_signals jsonb`, `login_actor_class`, `risk_state`, `client_ctx_hash` and `expires_at`, plus a new `session_events` table (`session_id`, `ts`, `from_state`, `to_state`, `trigger`, `signals jsonb`). `scripts/seed.ts` creates the demo user, a second user and 2-3 applications; the demo password is read from `DEMO_USER_PASSWORD` (placeholder in `.env.example`). → verify: seed is idempotent; row counts asserted; no password literal in git.
 3. Deploy to the free Vercel hostname over HTTPS with the "Prototype, not a real government service" banner; fix the final project name first (it is the RP ID). Preview deployments are not used for passkeys. → verify: loads at `APP_ORIGIN`.
