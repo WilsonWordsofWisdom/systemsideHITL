@@ -117,8 +117,14 @@
 **Why:** The spec's sentence is an instruction aimed at the agent, which conflicts with the rule against model-directed imperatives and with the content lint.
 **Alternatives:** Use the spec's wording, or test it as a flagged copy variant (not chosen; can be added later).
 
+## 2026-11-21 — Vercel project `hitl_test`, hostname `hitltest.vercel.app`
+**Decision:** Use the Vercel project `hitl_test` (`prj_KBSOBiPx9LVMegr7XqfVM4JSSVAZ`, team "wilsonwordsofwisdom's projects"). Its production hostname `hitltest.vercel.app` is `APP_ORIGIN` (`https://hitltest.vercel.app`) and the WebAuthn RP ID. Vercel Authentication is **disabled** (the dashboard offers only off, Standard or All Deployments, and Standard protects `*.vercel.app` production domains). To avoid public previews of unfinished branches, the Phase 0 scaffold adds a `vercel.json` that turns off automatic deployments for every branch except `main`, so production changes only when the owner merges a PR. Verified 2026-11-21: `ssoProtection` off, and an anonymous request to `https://hitltest.vercel.app/` reaches Vercel with no sign-in redirect. The project is re-linked from the starter repo `hitl_test` to `systemsideHITL` when the Phase 0 scaffold is ready to merge, so the docs-only `main` is never published as a static site.
+**Why:** The owner created the project for this prototype. Re-linking later avoids publishing the docs. The other aliases (`hitltest-wilsonwordsofwisdoms-projects.vercel.app` and the git-branch alias) are not the RP ID, so passkeys work only on `hitltest.vercel.app`.
+**Alternatives:** The earlier project `systemsidehtl` (not used); deploying manually without a Git link.
+**Note:** The Vercel connector in this session can read the project but not change its settings, so protection and Git-link changes are made by the owner in the dashboard.
+
 ## Open
-- Phase 0: verify the pooled database connection settings; fix the final Vercel project name before any passkey is enrolled.
+- Phase 0: verify the pooled database connection settings; scaffold adds `vercel.json` limiting deployments to `main`; owner re-links the project to `systemsideHITL` when the scaffold PR is ready.
 - Owner confirmation of the repeated-request ticket behaviour (reuse or supersede), logged above as pending.
 - Phase 4 spike: confirm the 2026-07-28 changelog details, SDK support for both revisions, and the MCP SDK inside a Next.js route.
 - Phase 6 capability check: whether Muse can browse or use MCP.
