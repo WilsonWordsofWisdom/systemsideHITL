@@ -2,6 +2,8 @@
 
 Source: `ref/HITL-prototype-build-spec.md`. Status: **draft; review decisions recorded 2026-11-21 (see `docs/decisions.md`)**.
 
+C4 diagrams (context, containers, components, a dynamic view of the gated flow, and deployment) are in [ArchitectureDiagram.drawio](ArchitectureDiagram.drawio), one page each. The Mermaid diagrams below are the quick-reference versions.
+
 ## 1. Shape
 
 One Next.js (App Router, TypeScript) deployment. One Postgres database. Two entry routes (Web UI/API and MCP) converge on **one guard function**. That choke point is the whole point of the prototype, so everything else is arranged around keeping it single and bypass-proof.
