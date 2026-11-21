@@ -1,6 +1,6 @@
 # Architecture: System-side HITL prototype ("DemoGov Permits")
 
-Source: `ref/HITL-prototype-build-spec.md`. Status: **draft, awaiting owner sign-off**.
+Source: `ref/HITL-prototype-build-spec.md`. Status: **draft; review decisions recorded 2026-11-21 (see `docs/decisions.md`)**.
 
 ## 1. Shape
 
@@ -105,9 +105,11 @@ Plain, server-rendered, neutral. It says what the site is (a fictional permit se
 
 | Method | Who can complete it | Notes |
 |---|---|---|
-| Password (demo accounts) | Humans and agents | The only method an agent can finish. Password comes from env (`DEMO_USER_PASSWORD`) via the seed script, is given to testers in the test prompt/README, and is never committed. |
+| Password (demo accounts) | Humans and agents | The only method an agent can finish. Password comes from env (`DEMO_USER_PASSWORD`) via the seed script, is never committed. How a given agent obtains it (or otherwise gets signed in) is left to the tester working with that agent; the site prescribes nothing. |
 | Passkey | Humans (needs an authenticator) | Establishes `signin_method=passkey`. |
 | OAuth consent (MCP) | MCP clients | Shows the client name; the session is created as `declared_agent` with the client as `act`. |
+
+**No second factor at sign-in.** The "2FA setup" page enrols the approver passkey, which is used to approve gated actions (§3). It is closed during test runs (`PASSKEY_ENROLMENT=closed`, §4.8); the owner enrols beforehand.
 
 The form includes an "I'm an AI agent acting for someone" checkbox (`SELF_DECLARE_UI`, default on). It is a signal, not a trust grant; an agent that isn't told about it won't tick it, which is itself a result.
 
@@ -158,6 +160,8 @@ In redirect mode an agent in the human's browser lands on the approval page. The
 | `HITL_AUTORESUME` | on / off | off | auto-resubmit after approval |
 | `MCP_STEP_SCOPED_TOOLS` | on / off | off | scoped `tools/list` |
 | `MCP_GATE_MODE` | elicitation / tool_result | tool_result | MCP gate variant |
+| `HITL_GATE_STATUS` | 403 / 401 / 202 | 403 | HTTP status of the gated web response; fixed per run |
+| `PASSKEY_ENROLMENT` | open / closed | closed during runs | stops agents adding their own passkey |
 
 ### 4.7 How the final actor class is derived
 
@@ -184,6 +188,8 @@ One function, `classifyActor`, used at sign-in and on every request. Inputs are 
 - **All signals are logged** even when they didn't change the class, with the score, the weights applied and the tier that decided it.
 - **Draft score weights** (tunable in `policy/classifier.yaml`; calibrate during the `observe` baseline run): webdriver true +50, untrusted input events +30, no pointer movement before click +20, form completed under 2 s +20, perfectly regular timing +15, missing browser headers +15, agent UA token +40, session used from a different client context +30, API call with no prior page view +10. `T_suspect` = 50, `T_clear` = 20.
 - **Ground truth is separate.** Testers label each run with the real agent and actor (run ID plus agent label). The console compares the classifier's output with that label to give the detection rate. The label never feeds the classifier.
+- **Signal window.** Behaviour signals (tier C) are scored over a sliding 60-second window per request, on top of the sticky state. A quiet window (no events) counts as no evidence, not as suspicious.
+- **Calibration.** Weights and thresholds are tuned on the live agents' `observe` baseline run, then frozen, and a weights version is recorded in every run. Because this tunes on the agents under test, the baseline run is used for tuning only; detection rates are reported from separate runs after the freeze and labelled as tuned on the same agents.
 
 ### 4.8 Can an agent evade or disguise itself?
 
@@ -218,7 +224,7 @@ Yes for tiers B to E, no for tier A, and the design assumes this.
 
 **Layer 1: limit what the session can do.**
 - Idle timeout 30 min and absolute lifetime 8 h; session rotated at sign-in.
-- Passkey sign-in with UV ends every earlier session for that user and starts a new one with a clean state. This is the way a human takes a session back after an agent used it.
+- Passkey sign-in with UV ends every earlier session for that user and starts a new one with a clean state. This is the way a human takes a session back after an agent used it. Only the main `/login` does this. `/approve` and `/device` use an **approval-only session**: it can approve tickets, cannot act on the journey and ends no other session, so approving from a phone does not kill the agent's session (T9).
 - Passkey enrolment closed during test runs (§4.8).
 
 **Layer 2: attribute the actor per request.**
@@ -278,6 +284,8 @@ Rule: journey services (create draft, submit, pay, etc.) are plain functions tak
 
 - **Tickets:** Postgres only. State transitions happen in single conditional `UPDATE ... WHERE state=...` statements. This makes consume race-safe without locks.
 - **Session and actor class:** the enforcement class is recomputed per request, never cached. The session stores raw signals plus the *login-time* class (`signin_method`, `login_signals`, `login_actor_class`) for display and as a prior; it is never an authorisation input on its own.
+- **Ticket binding:** a ticket is redeemable only by the web session, or the OAuth client plus user for MCP, that requested it. Any other redeemer is rejected with reason `wrong_session`, logged separately from agent failures.
+- **Approval hash:** covers the request body plus a snapshot hash of the stored resource (draft contents and version for submit; application and amount for pay); volatile fields are excluded by a named per-action list.
 - **Session risk state:** `sessions.risk_state` (`clean | agent_observed | handover_suspected`) is escalate-only and changes only through `lib/auth/session.ts`, which appends every change to `session_events`. Ending a session never deletes its events.
 - **WebAuthn challenge:** server-side row or signed cookie holding `nonce` plus `ticket_id`. The expected challenge is recomputed as `H(ticketId || payload_hash || nonce)` at verify time.
 - **Journey state for MCP:** derived from `applications.status`, so there is no separate state machine to drift.
@@ -293,7 +301,7 @@ Every security control and check implemented on the system side. Nothing is buil
 | C1 | Single `hitlGuard` called by every mutating route and MCP tool; no gated action runs without it | `lib/hitl/guard.ts`, route/tool adapters | Route-coverage test fails if a mutating route/tool lacks the guard (Phase 2); T11 |
 | C2 | Policy decision (`allow`/`gate`/`deny`) made server-side from `policy/hitl-policy.yaml`, loaded at boot, read-only | `lib/hitl/policy.ts` | Action × actor matrix unit test; invalid YAML fails boot (Phase 2) |
 | C3 | Fail closed: classifier or policy error becomes `gate` (or `deny` for critical actions), never `allow` | guard | Fault-injection unit test (Phase 2) |
-| C4 | Unlisted mutating action is not allowed by default. The spec's `default: allow` applies only to routes explicitly marked read-only (design change from spec) | policy + guard | Unit test: unknown action is gated/denied (Phase 2) |
+| C4 | A test fails the build if any mutating route or MCP tool has no policy entry; at runtime an unlisted mutating action is denied. The spec's `default: allow` applies only to routes explicitly marked read-only (design change from spec) | policy + guard + CI test | Coverage test; unit test that an unknown action is denied (Phase 2) |
 | C5 | Ownership check on every resource access; users can only touch their own applications and contact details | service layer | Cross-user isolation tests with the second seeded user (Phase 1) |
 | C6 | `HITL_MODE=observe` cannot be enabled unless an explicit env var allows it, and the console shows a persistent banner while on | config loader, console | Unit test on config; e2e banner check (Phase 3) |
 
@@ -301,12 +309,12 @@ Every security control and check implemented on the system side. Nothing is buil
 
 | ID | Control | Enforced in | Verified by |
 |---|---|---|---|
-| T1 | Ticket bound to user + action + resource + SHA-256 of canonical JSON payload; mismatch is rejected | `tickets.ts`, `hash.ts` | Hash unit tests; T5 (Phase 2) |
+| T1 | Ticket bound to user + action + resource + SHA-256 of canonical JSON of the request body plus a snapshot hash of the stored resource; volatile fields excluded by a named per-action list; any mismatch is rejected | `tickets.ts`, `hash.ts` | Hash unit tests; draft edited after approval is rejected; T5 (Phase 2) |
 | T2 | Single use: consume is one conditional `UPDATE ... WHERE state='approved'` | `tickets.ts` | Concurrent-consume test, exactly one winner; T6 (Phase 2) |
 | T3 | TTL ≤ 10 min; expiry checked at read and at consume, not by a cron | `tickets.ts` | T7 (Phase 2) |
 | T4 | Ticket IDs ≥ 128 bits from a CSPRNG | `tickets.ts` | Unit test on ID length/format (Phase 2) |
 | T5 | State machine permits only `pending→approved→consumed` and `pending→rejected\|expired`; other transitions error | `tickets.ts` | Transition unit tests (Phase 2) |
-| T6 | A ticket works only for its own user; another user's ticket is rejected | guard | Unit + e2e (Phase 2) |
+| T6 | A ticket is redeemable only by the session (web) or OAuth client plus user (MCP) that requested it; other redeemers, including another user, are rejected with reason `wrong_session` | guard | Unit + e2e (Phase 2) |
 | T7 | `continue_url` and redirects are built server-side from `APP_ORIGIN`; client-supplied URLs are ignored | handoff builders | Test that a supplied URL is ignored (Phase 2) |
 | T8 | Approval preview is read from the ticket row, never from URL parameters | approve page | e2e: tampered query string changes nothing (Phase 2) |
 | T9 | Rate limit on ticket creation and approval attempts, per user and per IP hash, counters in Postgres (no extra service) | `lib/ratelimit.ts` | Unit test (Phase 2) |
@@ -325,6 +333,7 @@ Every security control and check implemented on the system side. Nothing is buil
 | W8 | Virtual authenticator permitted only when `NODE_ENV=test` | config + test harness | Startup assertion (Phase 1) |
 | W9 | OTP fallback approval is flagged as weaker in logs and is off unless enabled | approve route | Unit test (Phase 2) |
 | W10 | Approval page sends `frame-ancestors 'none'` and `X-Frame-Options: DENY` so it can't be clickjacked | security headers | Header test (Phase 1) |
+| W11 | `/approve` and `/device` use an approval-only session: it can approve tickets, cannot call journey routes, and ends no other session | approval routes, `session.ts` | Test that an approval-only session is rejected by journey routes and does not end the requester's session (Phase 2); T9 |
 
 ### 7.4 Actor identification
 
@@ -349,7 +358,8 @@ Every security control and check implemented on the system side. Nothing is buil
 | M3 | Consent screen shows the client name; token carries `sub` and `act` | OAuth AS | Integration test decodes token (Phase 4) |
 | M4 | Every MCP tool calls the same guard; the class on `/mcp` is always at least `declared_agent` | `app/mcp` | SDK-client integration test (Phase 4) |
 | M5 | `tools/list` is computed from DB state; scoping is a convenience, never the enforcement | `app/mcp` | Test: calling a hidden tool is still gated/denied (Phase 4) |
-| M6 | Client capabilities logged on `initialize` | `app/mcp`, `log.ts` | Console shows capabilities (Phase 4) |
+| M6 | Client capabilities logged on `initialize` (2025-11-25) or on each request (2026-07-28, which has no `initialize`) | `app/mcp`, `log.ts` | Console shows capabilities for both revisions (Phase 4) |
+| M7 | Revision 2026-07-28 is primary; 2025-11-25 is supported by version negotiation; `tool_result` is the fallback. Elicitation correlation uses `elicitationId` + completion notification (2025-11-25) or `requestState` (2026-07-28) | `app/mcp` | SDK-client integration test per revision (Phase 4, after the spike) |
 
 ### 7.6 Web session and transport
 
@@ -363,7 +373,7 @@ Every security control and check implemented on the system side. Nothing is buil
 | S6 | Document upload is fake: metadata only, no real files stored or parsed | `attach_document` | Test that no file content is persisted (Phase 1) |
 | S7 | HTTPS only; `RP_ID` and `APP_ORIGIN` come from env, not from request headers | config | Startup assertion (Phase 0) |
 | S8 | Session idle timeout 30 min, absolute lifetime 8 h; expired sessions are rejected | `lib/auth/session.ts` | Unit tests with a fake clock (Phase 1) |
-| S9 | Passkey sign-in with UV ends all earlier sessions for that user and starts a clean one (the reset path after an agent used a session) | `lib/auth/session.ts` | Unit + e2e (Phase 1) |
+| S9 | Passkey sign-in with UV on the main `/login` ends all earlier sessions for that user and starts a clean one (the reset path after an agent used a session). Approval pages do not do this (see W11) | `lib/auth/session.ts` | Unit + e2e (Phase 1) |
 | S10 | The session cookie never authorises a high-risk action on its own; the guard requires an approved ticket | guard | Covered by C1 and T11; explicit test that a valid cookie alone is gated (Phase 2) |
 
 ### 7.7 Content safety toward agents
@@ -384,6 +394,7 @@ Every security control and check implemented on the system side. Nothing is buil
 | D3 | Supabase: row-level security enabled on every table with no policies for the anon/authenticated roles, so the auto-generated API exposes nothing; the app uses a server-side DB connection; run Supabase security advisors after each migration | DB migrations | Advisor output clean (Phase 0) |
 | D4 | IPs hashed in logs; demo data only; no real personal data | `log.ts`, seed | Unit test (Phase 2) |
 | D5 | Fictional brand plus a visible "Prototype for testing, not a real government service" banner on every page | layout | e2e (Phase 0) |
+| D6 | The app connects through the pooled connection (prepared statements off); migrations and seed use the direct connection; the two strings are separate env vars | `lib/db`, scripts | Ticket-consume SQL passes through the pooler in a Phase 0 test |
 
 ### 7.9 Audit and admin
 
@@ -418,23 +429,26 @@ Test-scale only: tens of requests per minute, a few concurrent tickets. No cachi
 
 ## 10. Deployment
 
-**Chosen: Vercel + Supabase Postgres** (owner decision, 2026-11-20). Domain still to be supplied (it fixes the WebAuthn RP ID). Alternatives considered: single VM/container (better for long-lived SSE and MCP streams) and a `cloudflared` tunnel (dev only, unstable RP ID). No cloud resources are provisioned until the build branch starts and the domain is known.
+**Chosen: Vercel + Supabase Postgres** (owner decision, 2026-11-20). Domain: the free Vercel `*.vercel.app` hostname (decided 2026-11-21). It becomes the WebAuthn RP ID, so the Vercel project name must be final before any passkey is enrolled, and passkeys work only on the production hostname, not preview deployments. Tiers: free for build Phases 0-5, paid for Phase 6 live testing. Database: the app uses Supabase's transaction pooler with prepared statements off; migrations and seed use the direct connection (verified in Phase 0). Alternatives considered: single VM/container (better for long-lived SSE and MCP streams) and a `cloudflared` tunnel (dev only, unstable RP ID). No cloud resources are provisioned until the build branch starts and the cost estimate is signed off.
 
 ## 11. Risks found in the spec
 
-1. **Status code:** §9.1 pairs `403` with `WWW-Authenticate: ... insufficient_user_authentication`. RFC 9470 defines that error with `401`. Decide which; the test is whether agents react to the shape, so pick one and keep it fixed.
+1. **Status code:** §9.1 pairs `403` with `WWW-Authenticate: ... insufficient_user_authentication`. RFC 9470 defines that error with `401`. Decided: 403 by default, with `HITL_GATE_STATUS=403|401|202` so the status code itself can be tested; the value is fixed per run.
 2. **SSE on serverless:** function timeouts cut streams. Use short-lived SSE with auto-reconnect and polling fallback, or choose option B.
-3. **Step-scoped tools plus `list_changed`:** notifications need a long-lived server-to-client stream. Stateless serverless MCP can't push them. Compute `tools/list` from DB state per request (works everywhere) and treat push notification as best effort.
+3. **Step-scoped tools plus `list_changed`:** notifications need a long-lived server-to-client stream. Stateless serverless MCP can't push them. Compute `tools/list` from DB state per request (works everywhere) and treat push notification as best effort. Revision 2026-07-28 has no protocol sessions, so push is moot for clients on it.
 4. **OAuth authorization server inside the same app** (dynamic client registration, consent, `act` claim) is the largest single build item. Use the SDK's auth helpers rather than hand-rolling.
-5. **URL elicitation (`-32042`)** depends on the SDK and client spec revision; build `tool_result` mode first, it's the universal fallback.
+5. **URL elicitation (`-32042`)** depends on the SDK and client spec revision; build `tool_result` mode first, it's the universal fallback. Decided: support 2026-07-28 (primary; stateless, no `initialize`, no elicitation completion notification or `elicitationId`, correlation via `requestState`) and 2025-11-25 by negotiation; confirm the details in the Phase 4 spike.
 6. **`/device` is not truly out-of-band** if it uses the same platform authenticator on the same machine. Fine for protocol testing; note it in results when testers use one machine.
-7. **Console admin auth** is unspecified. Assume a separate admin env-secret login.
+7. **Console admin auth** is unspecified. Decided: env-secret login with its own cookie.
 8. **Payload hash scope:** define the volatile-field exclusion list per action up front. Otherwise a harmless field difference between ticket creation and retry causes false mismatches.
 9. **Self-approval risk:** if an agent drives the human's already-signed-in browser, a platform authenticator still requires a user gesture and biometric. T4 verifies this; the virtual authenticator in CI is the exception and must never be enabled outside tests.
-10. **"Muse"** remains unidentified (spec DECISION).
-11. **Agent sign-in gap (spec §11.3):** prompt P1 gives only an email, but agents can't use passkeys. Resolved in §4.2: password sign-in for demo accounts, password supplied via the test prompt.
+10. **"Muse"** is Meta's Muse personal agent (decided 2026-11-21): web route first, MCP only if it supports it; the first run is a capability check.
+11. **Agent sign-in gap (spec §11.3):** prompt P1 gives only an email, but agents can't use passkeys. Resolved in §4.2: password sign-in exists for demo accounts, and how each agent gets signed in is left to the tester.
 12. **No landing/purpose page in the spec:** added in §4.1, neutral by default, hints behind `AGENT_HINTS` so baseline vs hinted runs are comparable.
 13. **Login-time detection is weak evidence:** agentic browsers look like Chrome and sessions can be handed over. Hence §4.3: record and display it, but enforce on the per-request class and gate humans too.
 14. **Passkey self-enrolment by an agent** (virtual authenticator) would let it approve its own tickets. Controls in §4.8; closing enrolment during runs is a Phase 1 requirement.
 15. **No tested way to separate human from agent in one session:** a cookie is a bearer token and cannot show who is acting. Mitigated by §4.9 (session never an approval, per-request attribution where agents sign, monitoring of switches), not eliminated.
-16. **Demo password in prompts:** acceptable for demo data only; kept out of git, rotated per test round, and the demo accounts hold no real data.
+16. **Tuning the classifier on the agents under test inflates detection rates.** Chosen anyway (decisions log); mitigated by tuning on the baseline run only and reporting detection from separate post-freeze runs, labelled accordingly (§4.7).
+17. **Strict ticket binding makes reconnects look like failures.** An agent that restarts after approval must ask again; `wrong_session` is logged separately so results can tell this apart from agent errors.
+18. **MCP revisions differ** (2026-07-28 vs 2025-11-25): capability logging, elicitation correlation and completion signalling all change. Spike in Phase 4 before building the gate modes.
+19. **Demo password in prompts (now: delivery left to the tester):** acceptable for demo data only; kept out of git, rotated per test round, and the demo accounts hold no real data.
