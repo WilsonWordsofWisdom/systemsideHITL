@@ -104,6 +104,11 @@
 ## 2026-11-21 — Test plan choices
 **Decisions:** Muse is Meta's Muse personal agent: test on the web route first, MCP only if it supports it. Approvals use a real phone for T9 and a sample of runs, same machine for the rest (results note which). Every agent gets an `observe` baseline before enforcement runs. `AGENT_HINTS` is off for baseline and main runs and on only as a comparison variant.
 
+## 2026-11-21 — Repeated gated requests reuse or supersede the pending ticket (pending owner confirmation)
+**Decision:** An identical repeated request from the same session gets the existing pending ticket back. A changed payload creates a new ticket and rejects the earlier one with reason `superseded`. An approved ticket that expires unredeemed is shown as "approved, not redeemed" (derived, not a new state) and counted as a resume failure.
+**Why:** The human should only ever see one approval for the current version of an action, and agents that retry before approval shouldn't flood them.
+**Alternatives:** Always create a new ticket (simpler, but piles up pending approvals); keep the old ticket pending until it expires (the human could approve an outdated payload).
+
 ## Open
 - Phase 0: verify the pooled database connection settings; sign off the cost estimate; fix the final Vercel project name before any passkey is enrolled.
 - Before the Phase 1 build: PRD, Gherkin tests, design doc with mockups and cost estimate reviewed.
