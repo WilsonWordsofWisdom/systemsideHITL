@@ -104,8 +104,21 @@
 ## 2026-11-21 — Test plan choices
 **Decisions:** Muse is Meta's Muse personal agent: test on the web route first, MCP only if it supports it. Approvals use a real phone for T9 and a sample of runs, same machine for the rest (results note which). Every agent gets an `observe` baseline before enforcement runs. `AGENT_HINTS` is off for baseline and main runs and on only as a comparison variant.
 
+## 2026-11-21 — Repeated gated requests reuse or supersede the pending ticket (pending owner confirmation)
+**Decision:** An identical repeated request from the same session gets the existing pending ticket back. A changed payload creates a new ticket and rejects the earlier one with reason `superseded`. An approved ticket that expires unredeemed is shown as "approved, not redeemed" (derived, not a new state) and counted as a resume failure.
+**Why:** The human should only ever see one approval for the current version of an action, and agents that retry before approval shouldn't flood them.
+**Alternatives:** Always create a new ticket (simpler, but piles up pending approvals); keep the old ticket pending until it expires (the human could approve an outdated payload).
+
+## 2026-11-21 — No cost estimate
+**Decision:** The owner does not need a cost estimate. This supersedes the "cost estimate signed off before provisioning" wording in the lifecycle-documents and hosting entries above. Provisioning still waits for the owner to approve the Phase 0 deployment.
+
+## 2026-11-21 — Design and mockups approved; declarative handoff wording
+**Decision:** The owner approved `docs/design.md` and `docs/design/mockups.html` (Material 3 baseline, fictional brand, light theme only). The handoff panel uses declarative wording ("…needs approval from the account holder with their passkey") instead of the spec's "Ask the person you're acting for to open this link…".
+**Why:** The spec's sentence is an instruction aimed at the agent, which conflicts with the rule against model-directed imperatives and with the content lint.
+**Alternatives:** Use the spec's wording, or test it as a flagged copy variant (not chosen; can be added later).
+
 ## Open
-- Phase 0: verify the pooled database connection settings; sign off the cost estimate; fix the final Vercel project name before any passkey is enrolled.
-- Before the Phase 1 build: PRD, Gherkin tests, design doc with mockups and cost estimate reviewed.
+- Phase 0: verify the pooled database connection settings; fix the final Vercel project name before any passkey is enrolled.
+- Owner confirmation of the repeated-request ticket behaviour (reuse or supersede), logged above as pending.
 - Phase 4 spike: confirm the 2026-07-28 changelog details, SDK support for both revisions, and the MCP SDK inside a Next.js route.
 - Phase 6 capability check: whether Muse can browse or use MCP.

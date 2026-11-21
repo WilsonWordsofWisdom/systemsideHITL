@@ -431,7 +431,7 @@ Test-scale only: tens of requests per minute, a few concurrent tickets. No cachi
 
 ## 10. Deployment
 
-**Chosen: Vercel + Supabase Postgres** (owner decision, 2026-11-20). Domain: the free Vercel `*.vercel.app` hostname (decided 2026-11-21). It becomes the WebAuthn RP ID, so the Vercel project name must be final before any passkey is enrolled, and passkeys work only on the production hostname, not preview deployments. Tiers: free for build Phases 0-5, paid for Phase 6 live testing. Database: the app uses Supabase's transaction pooler with prepared statements off; migrations and seed use the direct connection (verified in Phase 0). Alternatives considered: single VM/container (better for long-lived SSE and MCP streams) and a `cloudflared` tunnel (dev only, unstable RP ID). No cloud resources are provisioned until the build branch starts and the cost estimate is signed off.
+**Chosen: Vercel + Supabase Postgres** (owner decision, 2026-11-20). Domain: the free Vercel `*.vercel.app` hostname (decided 2026-11-21). It becomes the WebAuthn RP ID, so the Vercel project name must be final before any passkey is enrolled, and passkeys work only on the production hostname, not preview deployments. Tiers: free for build Phases 0-5, paid for Phase 6 live testing. Database: the app uses Supabase's transaction pooler with prepared statements off; migrations and seed use the direct connection (verified in Phase 0). Alternatives considered: single VM/container (better for long-lived SSE and MCP streams) and a `cloudflared` tunnel (dev only, unstable RP ID). No cloud resources are provisioned until the build branch starts and the owner approves the Phase 0 deployment (no cost estimate is produced; owner decision 2026-11-21).
 
 ## 11. Risks found in the spec
 

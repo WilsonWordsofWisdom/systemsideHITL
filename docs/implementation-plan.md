@@ -18,12 +18,12 @@ All other review decisions (unlisted actions, hash scope, ticket binding, signal
 
 ## Pre-build documents (before the Phase 1 branch)
 
-Reviewed and signed off by the owner before any code is written.
+Reviewed and signed off by the owner before any code is written. **Status (2026-11-21): items 1-3 done on `feature/prebuild-docs`; item 4 dropped.**
 
 1. `docs/PRD.md` derived from the spec: problem, users, critical journeys, success metrics and north star, non-goals, technical requirements. It also puts the requirements into the repo, since `ref/` is gitignored. → verify: owner sign-off.
 2. `docs/tests/*.feature`: Gherkin, one file per PRD journey plus T1-T15 and T10a-d. → verify: every PRD journey and test case maps to a feature file.
 3. `docs/design.md` with mockups of the landing page, login, passkey setup, handoff panel, approval page, device page and console (Material Design default). → verify: owner sign-off on the mockups.
-4. Cost estimate for Vercel and Supabase (free vs paid tiers), with current prices checked. → verify: owner sign-off before anything is provisioned.
+4. ~~Cost estimate~~ Not needed (owner decision, 2026-11-21). Provisioning still waits for the owner to approve the Phase 0 deployment.
 
 ## Phase 0: Scaffold
 
