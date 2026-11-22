@@ -216,6 +216,24 @@ export const clientSignals = pgTable(
   (t) => [index("client_signals_session_idx").on(t.sessionId, t.ts)],
 ).enableRLS();
 
+// WebAuthn challenges: single use, short-lived, tied to a purpose and, where
+// known, a user and session (controls W1, W2). Phase 2 adds ticket approvals.
+export const webauthnChallenges = pgTable(
+  "webauthn_challenges",
+  {
+    id: text("id").primaryKey(),
+    // "register" | "login" | "approve"
+    purpose: text("purpose").notNull(),
+    challenge: text("challenge").notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    sessionId: text("session_id"),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [index("webauthn_challenges_expiry_idx").on(t.expiresAt)],
+).enableRLS();
+
 export const mcpClients = pgTable("mcp_clients", {
   id: uuid("id").primaryKey().defaultRandom(),
   clientId: text("client_id").notNull().unique(),

@@ -15,7 +15,8 @@ const appEnv = {
   HITL_MODE: "enforce",
   AGENT_HINTS: "off",
   SELF_DECLARE_UI: "on",
-  PASSKEY_ENROLMENT: "closed",
+  // Open so the e2e suite can enrol a virtual passkey; the closed state is unit-tested.
+  PASSKEY_ENROLMENT: "open",
 };
 
 export default defineConfig({

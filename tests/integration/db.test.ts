@@ -52,6 +52,7 @@ describe("database", () => {
       "session_events",
       "sessions",
       "users",
+      "webauthn_challenges",
     ]);
     expect(rows.filter((r) => !r.relrowsecurity).map((r) => r.relname)).toEqual([]);
   });

@@ -26,6 +26,9 @@ async function AccountNav() {
       <Link href="/applications" className="text-on-surface-variant hover:underline">
         Applications
       </Link>
+      <Link href="/account/passkeys" className="text-on-surface-variant hover:underline">
+        Passkeys
+      </Link>
       <span className="text-on-surface-variant">Signed in as {current.user.name}</span>
       <form action="/api/auth/logout" method="post">
         <input type="hidden" name="csrf" value={current.csrf} />

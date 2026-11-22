@@ -1,4 +1,5 @@
 import { selfDeclareUiOn } from "@/lib/flags";
+import { PasskeySignIn } from "./passkey-sign-in";
 
 // Sign-in page (FR6, FR8). Messages are chosen by code; nothing from the URL is shown.
 const MESSAGES = {
@@ -105,6 +106,16 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           Sign in
         </button>
       </form>
+
+      <div
+        className="my-6 flex items-center gap-3 text-sm text-on-surface-variant"
+        aria-hidden="true"
+      >
+        <span className="h-px flex-1 bg-outline-variant" />
+        or
+        <span className="h-px flex-1 bg-outline-variant" />
+      </div>
+      <PasskeySignIn />
     </div>
   );
 }

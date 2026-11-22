@@ -79,6 +79,11 @@
     return { mean: Math.round(mean), sd: Math.round(Math.sqrt(v / intervals.length)) };
   }
 
+  // Lets the passkey sign-in send the same snapshot as the password form.
+  window.__dgSignals = function () {
+    return snapshot();
+  };
+
   function snapshot() {
     var s = stats();
     var ua = navigator.userActivation;

@@ -145,6 +145,14 @@
 **Why:** Owner's choice. An in-process PGlite socket server was tried first and rejected: it lost unnamed prepared statements and hung under the app's query pattern. Docker Desktop was installed but not running; `embedded-postgres` was judged a higher supply-chain risk.
 **Trade-off:** Tests depend on the network; one run out of four timed out (4.2 min) and three reruns passed in about 34 s each.
 
+## 2026-11-23 — Passkeys (Phase 1 slice B)
+**Decision:** Passkeys are discoverable credentials (`residentKey: required`) with `userVerification: required` on enrolment and sign-in, so sign-in asks for no username. Challenges live in `webauthn_challenges`: single use, 5-minute expiry, tied to a purpose (`register`, `login`, later `approve`) and, for enrolment, to the user and session. Enrolment needs `PASSKEY_ENROLMENT=open` and a sign-in within the last 10 minutes; every attempt, allowed or refused, is written to `request_log` with the attestation format and AAGUID. Attestation is `none`, so AAGUIDs are often zero; the audit still records who enrolled, when and from which session. A passkey sign-in ends the user's other sessions (`passkey_reset`) but keeps approval-only ones. Until the Phase 2 classifier, a passkey sign-in whose signals show no automation flag gets login class `human`, otherwise `unknown`.
+**Why:** Matches FR6, FR7, FR10 and controls W1, W2, W7, S9.
+**Alternatives:** `attestationType: direct` for stronger audit data (more browser prompts, little value for a prototype).
+
+## 2026-11-23 — Production environment variables set
+The owner set `APP_ORIGIN=https://hitltest.vercel.app`, `RP_ID=hitltest.vercel.app` and a random `SESSION_SECRET` (marked sensitive) for Production in the Vercel project. The connector cannot list environment variables, so this is confirmed by the owner and will be verified by signing in on production after the Phase 1 merge.
+
 ## Open
 - Phase 0: scaffold adds `vercel.json` limiting deployments to `main`; owner re-links the project to `systemsideHITL` when the scaffold PR is ready.
 - Owner confirmation of the repeated-request ticket behaviour (reuse or supersede), logged above as pending.
