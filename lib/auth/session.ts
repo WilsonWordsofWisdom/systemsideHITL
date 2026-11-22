@@ -67,9 +67,10 @@ export async function revokeOtherSessions(
   reason: string,
   now = new Date(),
 ) {
-  const others = await db
-    .select({ id: sessions.id })
-    .from(sessions)
+  // One update and one bulk insert, however many sessions the user has.
+  const revoked = await db
+    .update(sessions)
+    .set({ revokedAt: now, revokeReason: reason })
     .where(
       and(
         eq(sessions.userId, userId),
@@ -77,9 +78,19 @@ export async function revokeOtherSessions(
         isNull(sessions.revokedAt),
         eq(sessions.approvalOnly, false),
       ),
+    )
+    .returning({ id: sessions.id });
+  if (revoked.length > 0) {
+    await db.insert(sessionEvents).values(
+      revoked.map((s) => ({
+        sessionId: s.id,
+        ts: now,
+        event: "session_revoked",
+        trigger: reason,
+      })),
     );
-  for (const s of others) await revokeSession(db, s.id, reason, now);
-  return others.length;
+  }
+  return revoked.length;
 }
 
 // Returns the live session for a cookie token, or null. Expired sessions are

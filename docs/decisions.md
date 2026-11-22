@@ -153,6 +153,10 @@
 ## 2026-11-23 — Production environment variables set
 The owner set `APP_ORIGIN=https://hitltest.vercel.app`, `RP_ID=hitltest.vercel.app` and a random `SESSION_SECRET` (marked sensitive) for Production in the Vercel project. The connector cannot list environment variables, so this is confirmed by the owner and will be verified by signing in on production after the Phase 1 merge.
 
+## 2026-11-23 — Journey routes and pages (Phase 1 slice C)
+**Decision:** Every mutating journey route goes through one handler, `journeyAction` (same origin, session that may act, CSRF, body parsing, then the action); Phase 2 inserts `hitlGuard` there, so no route can skip it. Routes follow the spec's paths (`POST /api/applications/[id]/submit` and `/pay`, `DELETE /api/applications/[id]`, `PUT /api/account/contact`), with POST variants where HTML forms can't send DELETE or PUT. Submitting requires an explicit `declaration` (`on`, `true` or `agree`) from forms and API callers alike. Deletion is soft and confirmed on its own page (no modal-only flows). Uploads keep only name, type and size (PDF, PNG, JPEG or text, up to 2 MB). Each edit bumps `applications.version`, the resource snapshot the Phase 2 approval hash will cover. Another user's application, or a malformed ID, is "not found" everywhere.
+**Why:** FR1, FR17, FR28, controls C1, C5, S5, S6.
+
 ## Open
 - Phase 0: scaffold adds `vercel.json` limiting deployments to `main`; owner re-links the project to `systemsideHITL` when the scaffold PR is ready.
 - Owner confirmation of the repeated-request ticket behaviour (reuse or supersede), logged above as pending.

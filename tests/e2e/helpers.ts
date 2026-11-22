@@ -19,6 +19,7 @@ export async function signIn(page: Page, email: string, password = PASSWORD, sel
 }
 
 export async function expectSignedIn(page: Page, name: string) {
-  await expect(page).toHaveURL(/\/applications$/);
+  // The test database is a remote Supabase project, so allow for network latency.
+  await expect(page).toHaveURL(/\/applications$/, { timeout: 15_000 });
   await expect(page.getByText(`Signed in as ${name}`).first()).toBeVisible();
 }
