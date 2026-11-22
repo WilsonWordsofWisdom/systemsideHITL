@@ -27,7 +27,7 @@ Reviewed and signed off by the owner before any code is written. **Status (2026-
 
 ## Phase 0: Scaffold
 
-**Status (2026-11-22):** steps 1, 2 and 4 done and verified on `feature/phase-0-scaffold`. Step 3 waits for the owner to re-link the Vercel project to `systemsideHITL` and merge the Phase 0 PR.
+**Status (2026-11-22):** done. Steps 1-4 verified; production live at `https://hitltest.vercel.app` (first deploy started manually, see decisions).
 
 1. Next.js + TS + Tailwind + Vitest + Playwright; ESLint/Prettier; `.env.example`. → verify: lint, typecheck and test commands pass on empty app.
 2. Drizzle schema (spec §5) + migrations. `sessions` also gets `signin_method`, `login_signals jsonb`, `login_actor_class`, `risk_state`, `client_ctx_hash` and `expires_at`, plus a new `session_events` table (`session_id`, `ts`, `from_state`, `to_state`, `trigger`, `signals jsonb`). `scripts/seed.ts` creates the demo user, a second user and 2-3 applications; the demo password is read from `DEMO_USER_PASSWORD` (placeholder in `.env.example`). → verify: seed is idempotent; row counts asserted; no password literal in git.
@@ -35,6 +35,8 @@ Reviewed and signed off by the owner before any code is written. **Status (2026-
 4. Database connections: pooled string for the app (prepared statements off), direct string for migrations and seed. → verify: the single-statement ticket-consume SQL runs correctly through the pooler.
 
 ## Phase 1: Journey + auth (no HITL yet)
+
+**Status (2026-11-22):** built in three slices on `feature/phase-1-journey`. Slice A done (landing page, password sign-in and sign-out, sessions with idle and absolute expiry and rotation, CSRF and origin checks, sign-in lockout, `signals.js` and `/api/signals`; 45 unit and integration tests, 8 end-to-end tests). Slice B (passkeys) and slice C (journey service layer and pages for steps 2-9) to follow.
 
 1. Landing page `/`: neutral purpose statement, journey overview, prototype banner, link to sign-in; `AGENT_HINTS` flag wired but off. → verify: page contains no model-directed imperatives (text lint); hint block appears only when the flag is on.
 2. Sign-in `/login`: password (demo accounts) and passkey enrol/sign-in via SimpleWebAuthn; "I'm an AI agent" checkbox behind `SELF_DECLARE_UI`; CSRF and rate limiting. `PASSKEY_ENROLMENT=open|closed` (closed during test runs; approver passkeys pre-enrolled by the owner). The passkey setup page is the approver "2FA" enrolment; sign-in itself has no second factor, and how each agent signs in is left to the tester; enrolment attempts are audited with actor class and attestation data. → verify: Playwright virtual-authenticator test; password sign-in works for the demo user; with enrolment closed, a password-authenticated session cannot add a passkey.

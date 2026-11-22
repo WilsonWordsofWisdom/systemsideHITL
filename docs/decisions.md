@@ -128,6 +128,23 @@
 **Verified 2026-11-22:** migration applied (8 tables, RLS on all, 0 policies); seed run twice gives 2 users and 4 applications with argon2id hashes; the conditional consume update through the transaction pooler changes 1 row then 0 rows (run in a rolled-back transaction).
 **Note:** The "direct" string from Vercel is Supabase's session pooler, not the raw database host. It handles DDL and works over IPv4. Supabase security advisors can't be run through the connector for this project; the RLS check above covers the main finding they would report.
 
+## 2026-11-22 — First production deploy started manually
+**What happened:** Merging PR #3 did not deploy, because the Vercel project was re-linked to `systemsideHITL` after the merge, so Vercel never received a push event. The production deployment of `main` at `10b7e76` was started through the Vercel connector and went live at `https://hitltest.vercel.app` (HTTP 200, prototype banner, HSTS). Later merges should deploy automatically; confirm on the next merge.
+
+## 2026-11-22 — Cache Components off; pages render fully on the server
+**Decision:** `cacheComponents` and `partialPrefetching` are turned off in `next.config.ts`.
+**Why:** With Cache Components, any page that reads the session cookie must stream behind `<Suspense>`, so a browser agent reading the page early could see placeholders instead of the form (FR28). Almost every page is per-user, so a prerendered shell gains little.
+**Alternatives:** Keep Cache Components with Suspense boundaries and `use cache: private`.
+
+## 2026-11-22 — Sessions, CSRF and sign-in lockout
+**Decision:** Session cookie `dg_session` (32 random bytes, `HttpOnly`, `SameSite=Lax`, `Secure` on https); only its SHA-256 is stored. Idle 30 min, absolute 8 h, rotated at sign-in. State-changing requests must carry an `Origin` (or `Referer`) equal to `APP_ORIGIN`; signed-in requests also need a CSRF token derived as HMAC(`SESSION_SECRET`, session id), sent as a hidden `csrf` field or `x-csrf-token` header. Sign-in lockout: 5 failures per email in 60 s locks that email for 10 min; 30 per IP hash in 60 s locks the IP. Counters live in Postgres (`rate_limits`). Forms post to the same API routes agents call (303 redirect for forms, JSON otherwise), so Phase 2's guard has one code path.
+**Why:** Server-side sessions can be revoked and audited (session events, handover reset), which the HITL design needs; per-IP limits are looser so one shared address can't lock out everyone.
+
+## 2026-11-22 — End-to-end tests use a separate Supabase test project
+**Decision:** Playwright runs a production build against a separate Supabase project (`tomyjajeonaqpcjwawvl`), read only from `.env.test.local` (`E2E_DATABASE_URL`, `E2E_DIRECT_DATABASE_URL`; `sslmode=require` is added if missing). Global setup migrates, truncates every `public` table and re-seeds before each run. A guard refuses to run if the test URLs share a host and user with `.env.local` (production); it caught a mis-pasted production URL on first setup.
+**Why:** Owner's choice. An in-process PGlite socket server was tried first and rejected: it lost unnamed prepared statements and hung under the app's query pattern. Docker Desktop was installed but not running; `embedded-postgres` was judged a higher supply-chain risk.
+**Trade-off:** Tests depend on the network; one run out of four timed out (4.2 min) and three reruns passed in about 34 s each.
+
 ## Open
 - Phase 0: scaffold adds `vercel.json` limiting deployments to `main`; owner re-links the project to `systemsideHITL` when the scaffold PR is ready.
 - Owner confirmation of the repeated-request ticket behaviour (reuse or supersede), logged above as pending.

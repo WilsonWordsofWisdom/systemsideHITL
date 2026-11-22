@@ -43,9 +43,11 @@ describe("database", () => {
     );
     expect(rows.map((r) => r.relname).sort()).toEqual([
       "applications",
+      "client_signals",
       "hitl_tickets",
       "mcp_clients",
       "passkeys",
+      "rate_limits",
       "request_log",
       "session_events",
       "sessions",

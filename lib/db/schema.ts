@@ -192,6 +192,30 @@ export const requestLog = pgTable(
   ],
 ).enableRLS();
 
+// Failure counters for sign-in and other rate limits, kept in Postgres so they
+// hold across serverless instances (control T9, S3).
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull().default(0),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+}).enableRLS();
+
+// Behaviour signals posted by signals.js after sign-in (FR11, FR13). The
+// classifier reads the most recent window of these in Phase 2.
+export const clientSignals = pgTable(
+  "client_signals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  },
+  (t) => [index("client_signals_session_idx").on(t.sessionId, t.ts)],
+).enableRLS();
+
 export const mcpClients = pgTable("mcp_clients", {
   id: uuid("id").primaryKey().defaultRandom(),
   clientId: text("client_id").notNull().unique(),
