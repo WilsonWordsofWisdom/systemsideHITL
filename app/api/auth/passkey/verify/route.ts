@@ -29,6 +29,8 @@ const Body = z.object({
   // "approval": sign in on /approve/[ticketId] for an approval-only session.
   mode: z.enum(["signin", "approval"]).optional(),
   ticketId: z.string().max(100).optional(),
+  // Approval sign-in on the phone page; it returns to that user's own page.
+  device: z.boolean().optional(),
   next: z.string().max(4096).optional(),
 });
 
@@ -148,9 +150,11 @@ export async function POST(request: Request) {
   // The return path is built here, never taken from the client (control T7).
   const ticketId = parsed.data.ticketId ?? "";
   const redirect = approval
-    ? TICKET_ID_PATTERN.test(ticketId)
-      ? `/approve/${ticketId}`
-      : "/"
+    ? parsed.data.device
+      ? `/device/${stored.userId}`
+      : TICKET_ID_PATTERN.test(ticketId)
+        ? `/approve/${ticketId}`
+        : "/"
     : (safeNextPath(parsed.data.next) ?? "/applications");
   const response = NextResponse.json({ ok: true, redirect });
   response.cookies.set(cookieName, token, sessionCookieOptions(appOrigin));

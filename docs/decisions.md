@@ -290,6 +290,18 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 **Why:** FR11, FR37, controls A4, A5, A7, test T10d.
 **Not yet:** RSA-PSS and ECDSA keys, and signed directory responses (draft appendix B). Add them if a live agent uses them.
 
+## 2026-11-24 — Phone page (Phase 5 slice B)
+**Decision:**
+- **What it lists:** `/device/[userId]` is the simulated out-of-band channel. It lists every pending, unexpired request of the signed-in account holder (newest first, at most 20), as if each request were pushed to their phone, plus approvals and declines from the last 10 minutes as confirmations. There is no "sent to phone" flag on tickets and no migration.
+- **"Send to my phone instead":** on the approval page this opens a disclosure with the phone page's link and QR code.
+- **Whose requests appear:** the page only ever shows the approver's own account. The user ID in the URL decides whether the page belongs to them. If it doesn't, or nobody is signed in, the page shows nothing about any request and offers passkey sign-in.
+- **Sign-in:** signing in there starts an approval-only session (`dg_approval`). The server builds the return path from the passkey's user, so the agent's session keeps running (W11, T9).
+- **Approving and declining:** each approval uses the same ticket-bound UV passkey assertion and endpoint as `/approve` (W6), so there is no separate `device-approve` endpoint. Decline returns to the phone page; that path is built from the ticket.
+- **Live updates:** `/api/device/events` (SSE, checked every second, 25 s per stream, then reconnect) sends the pending IDs, and the page re-renders from the server when they change. If the stream fails, the page polls `/api/device/pending` every 3 s and shows "Reconnecting".
+
+**Why:** FR10, FR20, FR22, controls W6, W11, J05, T9. Architecture risk 6 still applies: on one machine with one platform authenticator, the phone page is not truly out of band; the results file records which device was used.
+**Alternatives:** a per-ticket "sent to phone" flag (needs a migration, and the phone could miss requests nobody sent); a separate device approval endpoint (duplicates the approval checks).
+
 ## Open
 - Apply migration `0005` to production before merging Phase 4.
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.

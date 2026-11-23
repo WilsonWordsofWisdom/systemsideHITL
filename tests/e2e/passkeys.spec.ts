@@ -24,7 +24,7 @@ test("enrol a passkey, then sign in with it; other sessions end", async ({ page,
 
   await addAuthenticator(page);
   await enrolPasskey(page);
-  await expect(page.getByText("Passkey 1")).toBeVisible();
+  await expect(page.getByText("Passkey 1", { exact: true })).toBeVisible();
 
   const sql = testDb();
   try {
