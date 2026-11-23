@@ -230,6 +230,7 @@ describe("fail closed (C3)", () => {
     classify: (() => {
       throw new Error("classifier down");
     }) as unknown as typeof classifyActor,
+    webBotAuth: async () => null,
   };
 
   it("a classifier error turns allow into gate, never allow", async () => {
@@ -527,6 +528,41 @@ describe("session handover (T10a-c, FR35-FR38)", () => {
     expect(row.actorSignals).toMatchObject({
       riskChange: { from: "clean", to: "handover_suspected", trigger: "client_context_changed" },
     });
+  });
+
+  it("T10d: a Web Bot Auth signature on a human's session marks that request, logged on the same session", async () => {
+    const s = await session({
+      signinMethod: "passkey",
+      loginActorClass: "human",
+      clientCtxHash: clientContextHash(browserRequest(), SECRET),
+    });
+    await db.insert(clientSignals).values({ sessionId: s.id, payload: humanSnapshot });
+    const agent = "https://agent.example/.well-known/http-message-signatures-directory";
+    const signedOnly = async (r: Request) =>
+      r.headers.has("signature-input") ? { source: "web_bot_auth" as const, agent } : null;
+    const deps = {
+      policy: getPolicy,
+      classifierConfig: getClassifierConfig,
+      classify: classifyActor,
+      webBotAuth: signedOnly,
+    };
+    const signed = await hitlGuard(
+      input(s, { action: "create_draft", headers: { "signature-input": "sig1=()" } }),
+      deps,
+    );
+    expect(signed.actor).toMatchObject({ class: "declared_agent", tier: "A", confidence: "high" });
+    if (signed.kind === "ok") await signed.finish("executed");
+    expect(signed.actor.facts.protocolAgent).toEqual({ source: "web_bot_auth", agent });
+    // Agent evidence after a human-leaning login (architecture 4.9).
+    expect(await riskOf(s.id)).toBe("handover_suspected");
+    // The next unsigned request is not declared, but the raised risk state holds.
+    const unsigned = await hitlGuard(input(s, { action: "create_draft" }), deps);
+    expect(unsigned.actor.class).not.toBe("declared_agent");
+    if (unsigned.kind === "ok") await unsigned.finish("executed");
+    expect(await riskOf(s.id)).toBe("handover_suspected");
+    const logs = await logsFor(s.id);
+    expect(logs.map((l) => l.actorClass)).toContain("declared_agent");
+    expect(logs.every((l) => l.sessionId === s.id)).toBe(true);
   });
 
   it("the escalation applies to the request that caused it", async () => {

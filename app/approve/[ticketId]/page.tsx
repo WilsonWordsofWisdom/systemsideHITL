@@ -1,39 +1,14 @@
 import Link from "next/link";
+import QRCode from "qrcode";
 import { notFound } from "next/navigation";
 import { CsrfField, Notice, btn } from "@/components/journey";
 import { PasskeySignIn } from "@/app/login/passkey-sign-in";
 import { appConfig } from "@/lib/app";
 import { getApproverSession } from "@/lib/auth/current";
 import { getDb } from "@/lib/db/server";
-import { getTicket, type Ticket } from "@/lib/hitl/tickets";
+import { previewRows } from "@/lib/hitl/preview";
+import { getTicket } from "@/lib/hitl/tickets";
 import { ApproveButton } from "./approve-button";
-
-const ACTOR_LABEL: Record<string, string> = {
-  human: "Person",
-  declared_agent: "Automated assistant (declared)",
-  suspected_agent: "Automated assistant (suspected)",
-  unknown: "Unknown",
-};
-
-// What the approval covers, read from the ticket row only, never from the URL (T8).
-function rows(ticket: Ticket): [string, string][] {
-  const p = ticket.payloadPreview as Record<string, unknown>;
-  const d = (p.details ?? {}) as Record<string, unknown>;
-  const out: [string, string][] = [["Request", String(p.summary ?? ticket.action)]];
-  if (d.date) out.push(["Event date", String(d.date)]);
-  if (d.attendance) out.push(["Expected attendance", `${d.attendance} people`]);
-  if (d.location) out.push(["Location", String(d.location)]);
-  if (Array.isArray(p.documents) && p.documents.length) {
-    out.push(["Documents", p.documents.join(", ")]);
-  }
-  if (p.amount) out.push(["Amount", `${p.currency ?? ""} ${p.amount} (mock payment)`.trim()]);
-  if (p.recoveryEmail) out.push(["New recovery email", String(p.recoveryEmail)]);
-  if (p.phone) out.push(["New recovery phone", String(p.phone)]);
-  const actor = (ticket.requestedByActor as { class?: string }).class ?? "unknown";
-  out.push(["Requested by", ACTOR_LABEL[actor] ?? actor]);
-  out.push(["Expires", `${ticket.expiresAt.toISOString().slice(11, 16)} UTC`]);
-  return out;
-}
 
 // /approve/[ticketId]: the account holder sees exactly what they are approving and
 // approves with a passkey (spec 9.3, design.md 4.6, FR20, FR21).
@@ -96,6 +71,13 @@ export default async function ApprovePage({ params }: PageProps<"/approve/[ticke
         : { tone: "warn", title: "You declined this request", body: "Nothing was changed." },
   };
   const state = ended[ticket.state];
+  // "Send to my phone instead" (design.md 4.6): the phone page lists this account's
+  // pending requests, so the link is the same for every ticket (FR22).
+  const deviceLink = new URL(`/device/${ticket.userId}`, appConfig().appOrigin).toString();
+  const deviceQr =
+    ticket.state === "pending"
+      ? await QRCode.toString(deviceLink, { type: "svg", margin: 1, errorCorrectionLevel: "M" })
+      : "";
 
   return (
     <div className="max-w-xl">
@@ -107,7 +89,7 @@ export default async function ApprovePage({ params }: PageProps<"/approve/[ticke
         </Notice>
       )}
       <dl className="mb-6 grid grid-cols-[180px_1fr] border-t border-outline-variant">
-        {rows(ticket).map(([k, v]) => (
+        {previewRows(ticket).map(([k, v]) => (
           <div key={k} className="contents">
             <dt className="border-b border-outline-variant py-3 text-on-surface-variant">{k}</dt>
             <dd className="border-b border-outline-variant py-3">{v}</dd>
@@ -125,6 +107,28 @@ export default async function ApprovePage({ params }: PageProps<"/approve/[ticke
               </button>
             </form>
           </div>
+          <details className="mt-4">
+            <summary className={`${btn.text} cursor-pointer`}>Send to my phone instead</summary>
+            <div className="mt-3 flex flex-wrap items-start gap-4 rounded-xl border border-outline-variant p-4">
+              <div
+                role="img"
+                aria-label="QR code for the phone page"
+                className="h-32 w-32 shrink-0 [&>svg]:h-full [&>svg]:w-full"
+                dangerouslySetInnerHTML={{ __html: deviceQr }}
+              />
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="mb-2">
+                  Open this page on your phone and sign in with your passkey. Requests waiting for
+                  you appear there.
+                </p>
+                <p className="break-all">
+                  <a href={deviceLink} className="text-primary underline underline-offset-4">
+                    {deviceLink}
+                  </a>
+                </p>
+              </div>
+            </div>
+          </details>
           <p className="mt-4 text-sm text-on-surface-variant">
             You&apos;ll be asked for your fingerprint, face or device PIN. No passkey on this
             account yet?{" "}

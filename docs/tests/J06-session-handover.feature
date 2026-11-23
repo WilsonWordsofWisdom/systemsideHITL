@@ -42,7 +42,8 @@ Feature: Session handover between human and agent
     When a request on that session carries a valid Web Bot Auth signature
     Then that request is classified "declared_agent"
     And it is logged against the same session
-    And the session risk_state becomes "agent_observed"
+    And the session risk_state becomes "handover_suspected" (agent evidence after a human-leaning login)
+    And a later unsigned request on that session is not "declared_agent" but the risk_state holds
 
   @unit @FR12 @FR35
   Scenario: Agent evidence is never downgraded within a session

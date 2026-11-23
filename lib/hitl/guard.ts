@@ -18,6 +18,7 @@ import { payloadHash, stripVolatile } from "./hash";
 import { requestClassifierInput } from "./inputs";
 import { getPolicy, type Decision, type Policy } from "./policy";
 import { buildSnapshot } from "./snapshot";
+import { webBotAuthAgent } from "../webBotAuth";
 import {
   getTicket,
   redeemTicket,
@@ -71,12 +72,15 @@ export interface GuardDeps {
   policy: () => Policy;
   classifierConfig: () => ClassifierConfig;
   classify: typeof classifyActor;
+  // Web Bot Auth: the agent a valid request signature names (FR37, A7).
+  webBotAuth: typeof webBotAuthAgent;
 }
 
 const defaultDeps: GuardDeps = {
   policy: getPolicy,
   classifierConfig: getClassifierConfig,
   classify: classifyActor,
+  webBotAuth: webBotAuthAgent,
 };
 
 // The ticket ID comes from the X-HITL-Ticket header, or a form field for the
@@ -113,6 +117,11 @@ export async function hitlGuard(
   let risk: { from: string; to: string; trigger: string } | null = null;
   try {
     const cfg = deps.classifierConfig();
+    // Tier A: the MCP token names the client; on the web, a valid Web Bot Auth
+    // signature marks this one request, even on a human's cookie (A7).
+    const protocolAgent = input.mcp
+      ? { source: "mcp_token" as const, agent: input.mcp.clientId }
+      : await deps.webBotAuth(request);
     const classifierInput = await requestClassifierInput({
       db,
       request,
@@ -121,10 +130,8 @@ export async function hitlGuard(
       cfg,
       secret: input.secret,
       now,
+      protocolAgent,
     });
-    if (input.mcp) {
-      classifierInput.protocolAgent = { source: "mcp_token", agent: input.mcp.clientId };
-    }
     actor = deps.classify(classifierInput, cfg);
     const next = nextRiskState(session.riskState, {
       agentEvidence: FRESH_EVIDENCE_TIERS.has(actor.tier),

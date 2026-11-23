@@ -8,6 +8,7 @@ import {
   parseClassifierConfig,
   type ClassifierInput,
 } from "@/lib/hitl/classifier";
+import { loginClassifierInput } from "@/lib/hitl/inputs";
 
 const cfg = getClassifierConfig();
 const CHROME_UA =
@@ -47,6 +48,16 @@ describe("precedence (first match wins)", () => {
       cfg,
     );
     expect(c).toMatchObject({ class: "declared_agent", confidence: "high", tier: "A" });
+  });
+
+  it("1b. a Web Bot Auth signature at sign-in makes the login declared_agent (FR37, J01)", () => {
+    const login = loginClassifierInput(new Request("https://x.test/api/auth/login"), {
+      signinMethod: "password",
+      selfDeclared: false,
+      snapshot: humanSnapshot,
+      protocolAgent: { source: "web_bot_auth", agent: "https://agent.example/" },
+    });
+    expect(classifyActor(login, cfg)).toMatchObject({ class: "declared_agent", tier: "A" });
   });
 
   it("2. self-declaration (checkbox or X-Agent) is declared_agent with low confidence", () => {

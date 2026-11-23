@@ -10,17 +10,21 @@ declare global {
 }
 
 // "Sign in with a passkey" (FR6). Works only with JavaScript; the password form
-// above does not depend on it. With `ticketId` it signs in for an approval-only
-// session on /approve (W11); the server decides where to go next.
+// above does not depend on it. With `ticketId` (on /approve) or `device` (on the
+// phone page) it signs in for an approval-only session (W11); the server decides
+// where to go next.
 export function PasskeySignIn({
   ticketId,
+  device = false,
   next,
   label = "Sign in with a passkey",
 }: {
   ticketId?: string;
+  device?: boolean;
   next?: string;
   label?: string;
 }) {
+  const approval = Boolean(ticketId) || device;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -40,6 +44,7 @@ export function PasskeySignIn({
           response,
           signals: JSON.stringify(window.__dgSignals?.() ?? {}),
           ...(ticketId ? { mode: "approval", ticketId } : {}),
+          ...(device ? { mode: "approval", device: true } : {}),
           ...(next ? { next } : {}),
         }),
       });
@@ -48,7 +53,7 @@ export function PasskeySignIn({
       window.location.assign(redirect);
     } catch {
       setError(
-        ticketId
+        approval
           ? "Passkey sign-in didn't work. Try again on the device that holds your passkey."
           : "Passkey sign-in didn't work. Try again, or sign in with your password.",
       );

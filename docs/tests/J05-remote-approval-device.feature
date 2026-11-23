@@ -13,7 +13,10 @@ Feature: Approve from another device
   @e2e @web @T9 @FR22
   Scenario: The pending approval reaches the device page
     When the approver opens the approval page and chooses "Send to my phone instead"
-    Then "/device/<userId>" shows the pending approval within 2 seconds
+    Then the page shows the link and a QR code for "/device/<userId>"
+    When the approver signs in on that page with the passkey
+    Then it lists the pending approval
+    And a new request appears there within 2 seconds while the page is open
     And the device page shows the same preview as the ticket
 
   @e2e @web @FR22

@@ -330,7 +330,7 @@ Every security control and check implemented on the system side. Nothing is buil
 | W3 | Approver must be signed in as the ticket's user | approve route | e2e (Phase 2) |
 | W4 | Approval accepted only on `APP_ORIGIN`; the page shows the domain prominently | approve route and page | Origin-mismatch test (Phase 2) |
 | W5 | The agent can't satisfy the passkey prompt; ticket stays pending | approve flow | T4 (Phase 2, live in Phase 6) |
-| W6 | `/device` approval needs its own passkey assertion or device-bound secret | `device-approve` | T9 (Phase 5) |
+| W6 | `/device` approval needs its own passkey assertion or device-bound secret | `/api/hitl/[ticketId]/approve` (shared with `/approve`; ticket-bound UV assertion) | T9 (Phase 5) |
 | W7 | Passkey enrolment closed during test runs; when open it needs fresh sign-in and is audited with actor class and attestation data | enrolment route | Test that a password session can't add a passkey when closed (Phase 1) |
 | W8 | Virtual authenticator permitted only when `NODE_ENV=test` | config + test harness | Startup assertion (Phase 1) |
 | W9 | OTP fallback approval is flagged as weaker in logs and is off unless enabled | approve route | Unit test (Phase 2) |

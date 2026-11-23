@@ -37,6 +37,8 @@ export async function requestClassifierInput(opts: {
   cfg: ClassifierConfig;
   secret: string;
   now: Date;
+  // Tier A evidence verified by the caller (Web Bot Auth or the MCP token).
+  protocolAgent?: ClassifierInput["protocolAgent"];
 }): Promise<ClassifierInput> {
   const { db, request, session, cfg, now } = opts;
   const since = new Date(now.getTime() - cfg.window_seconds * 1000);
@@ -51,7 +53,7 @@ export async function requestClassifierInput(opts: {
 
   return {
     route: opts.route,
-    protocolAgent: null,
+    protocolAgent: opts.protocolAgent ?? null,
     selfDeclared: session.declaredAgent,
     ...requestHeaderInput(request),
     behaviour: inWindow.map((r) => r.payload as BehaviourSnapshot),
@@ -76,11 +78,12 @@ export function loginClassifierInput(
     signinMethod: "password" | "passkey";
     selfDeclared: boolean;
     snapshot: BehaviourSnapshot | null;
+    protocolAgent?: ClassifierInput["protocolAgent"];
   },
 ): ClassifierInput {
   return {
     route: "web",
-    protocolAgent: null,
+    protocolAgent: opts.protocolAgent ?? null,
     selfDeclared: opts.selfDeclared,
     ...requestHeaderInput(request),
     behaviour: opts.snapshot ? [opts.snapshot] : [],

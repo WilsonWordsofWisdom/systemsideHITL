@@ -16,7 +16,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/hitl/[ticke
   const rejected = await rejectTicket(db, ticket.id, "declined", now);
   await record(rejected ? "executed" : "blocked", rejected ? "declined" : `state:${ticket.state}`);
   if (wantsHtml(request)) {
-    return NextResponse.redirect(new URL(`/approve/${ticket.id}`, appConfig().appOrigin), 303);
+    // The phone page's Decline returns to that page (FR22); the path is built from
+    // the ticket, not taken from the form.
+    const back = body.return === "device" ? `/device/${ticket.userId}` : `/approve/${ticket.id}`;
+    return NextResponse.redirect(new URL(back, appConfig().appOrigin), 303);
   }
   return rejected
     ? NextResponse.json({ ok: true, state: "rejected" })
