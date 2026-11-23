@@ -81,6 +81,8 @@ Exit criteria: every high-risk action blocked without an approved ticket; retry 
 
 ## Phase 5: Agent identity + device channel
 
+**Status (2026-11-24):** built in three slices on `feature/phase-5-agent-identity`: A Web Bot Auth (step 1), B device page (step 2), C hint files (step 3). Slice A done: RFC 9421 Ed25519 verifier checked against the RFC 9421 B.2.6 and Web Bot Auth draft E.2 vectors, SSRF-guarded key-directory fetch with cache, tier A `declared_agent` for signed requests in the guard and at sign-in, T10d covered. Slice B next.
+
 1. `webBotAuth.ts` against RFC 9421 test vectors; key-directory cache. → signed test request becomes `declared_agent`; T10d: a signed request on a human's cookie session is classified `declared_agent` per request and logged against the same session.
 2. `/device/[userId]` simulated CIBA with SSE and passkey assertion; `device-approve` endpoint. → T9 with Playwright bot.
 3. `/llms.txt` and `/agents.md`, served only when `AGENT_HINTS=on`. (Landing page and self-declare checkbox already exist from Phase 1.) → verify: both return 404 with the flag off.

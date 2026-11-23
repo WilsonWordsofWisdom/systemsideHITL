@@ -100,6 +100,12 @@ describe("table summary and export (L4)", () => {
       "no page view, ctx changed, agent UA · score 65 · risk → handover_suspected",
     );
     expect(signalsSummary({ facts: { classifierError: true } })).toBe("classifier error");
+    expect(
+      signalsSummary({
+        tier: "A",
+        facts: { protocolAgent: { source: "web_bot_auth", agent: "https://a.example/" } },
+      }),
+    ).toBe("Web Bot Auth");
     // MCP rows show the client's revision and URL elicitation support (M6).
     expect(
       signalsSummary({

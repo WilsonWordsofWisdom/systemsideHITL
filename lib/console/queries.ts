@@ -119,7 +119,11 @@ export function signalsSummary(signals: unknown): string {
     contributions?: Record<string, number>;
     sticky?: boolean;
     riskChange?: { to?: string } | null;
-    facts?: { classifierError?: boolean; selfDeclared?: boolean };
+    facts?: {
+      classifierError?: boolean;
+      selfDeclared?: boolean;
+      protocolAgent?: { source?: string } | null;
+    };
     mcp?: {
       era?: string;
       protocolVersion?: string | null;
@@ -128,7 +132,11 @@ export function signalsSummary(signals: unknown): string {
   };
   if (s.facts?.classifierError) return "classifier error";
   const parts: string[] = [];
-  if (s.tier === "A") parts.push("protocol identity");
+  if (s.tier === "A") {
+    parts.push(
+      s.facts?.protocolAgent?.source === "web_bot_auth" ? "Web Bot Auth" : "protocol identity",
+    );
+  }
   if (s.tier === "B") parts.push("self-declared");
   // The MCP client's revision and URL elicitation support (control M6).
   if (s.mcp) {

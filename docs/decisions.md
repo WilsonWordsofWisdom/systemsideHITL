@@ -274,6 +274,22 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 **Why:** FR32, FR33, FR34, controls M5-M7, J08.
 **Alternatives:** sessionful legacy serving to send the completion notification (needs shared state across serverless instances); hiding tools by disabling them on calls too (the guard would never see premature attempts, which J08's manual scenario records).
 
+## 2026-11-24 — Web Bot Auth verification (Phase 5 slice A)
+**Decision:**
+- **Spec followed:** RFC 9421 with draft-ietf-webbotauth-httpsig-protocol-01 (the working group draft, 2026-10-29), Ed25519 only.
+- **What a signature must have:** the signature parameters must include `tag="web-bot-auth"`, `keyid` (the RFC 8037 JWK thumbprint) and `created`/`expires`. `created` may be at most 60 s in the future, `expires` must not have passed, and the window must be at most 24 h. The signature must cover `@authority` and the Signature-Agent member for its label; the legacy bare-string Signature-Agent is accepted too.
+- **What we check it against:** `@authority` and `@target-uri` are built from `APP_ORIGIN`, not the Host header. The key is looked up by (Signature-Agent URL, keyid), and its thumbprint is recomputed instead of trusting `kid`.
+- **What a valid signature means:** it makes that one request tier A `declared_agent`, on any session (FR37, A7). On a human-leaning session that escalates the risk state to `handover_suspected` under the Phase 2 rules (the J06 T10d scenario said `agent_observed`; corrected to match). It is checked on guarded requests and at sign-in. MCP requests use the token instead.
+- **Replay:** there is no nonce store. A replayed signature can only make a request look more like an agent, which never loosens a decision.
+- **Key directories (A5):** HTTPS on port 443 only, no credentials, no redirects, any status other than 200 is a failure, the directory media type is required at the well-known path, a 2 s timeout, 64 KB and 20 keys at most. Every resolved address must be public: private, loopback, link-local, CGNAT, documentation, multicast and unique-local ranges are blocked, including IPv4 inside IPv6. The check runs in the connection's own DNS lookup, so DNS rebinding can't bypass it.
+- **Cache:** per instance, 5 minutes. A failed fetch keeps the cached copy and is retried after a minute.
+- **Test keys:** the RFC 9421 example key is refused from directories (draft 6.8).
+- **Failures:** any failure means no signal and never blocks a request.
+- **Dependency:** `structured-headers` 2.1.1 for RFC 8941 parsing (Evert Pot, MIT, no dependencies, about 16.7M weekly downloads, released 2026-10-10; pinned exactly).
+
+**Why:** FR11, FR37, controls A4, A5, A7, test T10d.
+**Not yet:** RSA-PSS and ECDSA keys, and signed directory responses (draft appendix B). Add them if a live agent uses them.
+
 ## Open
 - Apply migration `0005` to production before merging Phase 4.
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.

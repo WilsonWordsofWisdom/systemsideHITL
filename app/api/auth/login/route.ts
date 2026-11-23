@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { webBotAuthAgent } from "@/lib/webBotAuth";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { appConfig } from "@/lib/app";
@@ -91,7 +92,12 @@ export async function POST(request: Request) {
   const client = parseSignals(parsed.data.signals);
   // Same classifier as every request (architecture 4.3); stored as the login class.
   const actor = classifyActor(
-    loginClassifierInput(request, { signinMethod: "password", selfDeclared, snapshot: client }),
+    loginClassifierInput(request, {
+      signinMethod: "password",
+      selfDeclared,
+      snapshot: client,
+      protocolAgent: await webBotAuthAgent(request),
+    }),
     getClassifierConfig(),
   );
   const { token, session } = await createSession(

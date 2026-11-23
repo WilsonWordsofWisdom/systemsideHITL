@@ -3,6 +3,7 @@ import {
   type AuthenticationResponseJSON,
 } from "@simplewebauthn/server";
 import { eq } from "drizzle-orm";
+import { webBotAuthAgent } from "@/lib/webBotAuth";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { appConfig } from "@/lib/app";
@@ -119,6 +120,7 @@ export async function POST(request: Request) {
       signinMethod: "passkey",
       selfDeclared: false,
       snapshot: client,
+      protocolAgent: await webBotAuthAgent(request),
     }),
     getClassifierConfig(),
   );
