@@ -27,6 +27,13 @@ Feature: Sign in, browse and draft a permit application
     When a visitor opens "/"
     Then the page says some steps need approval from the account holder
     And it links to "/llms.txt" and "/agents.md"
+    And "/llms.txt" and "/agents.md" are served and contain no model-directed text
+
+  @unit @e2e @web @FR41
+  Scenario: Agent hint files are absent in baseline runs
+    Given AGENT_HINTS is "off"
+    When a visitor requests "/llms.txt" or "/agents.md"
+    Then the response is 404
 
   # Sign-in (FR6, FR8, FR9)
 

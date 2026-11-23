@@ -302,6 +302,16 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 **Why:** FR10, FR20, FR22, controls W6, W11, J05, T9. Architecture risk 6 still applies: on one machine with one platform authenticator, the phone page is not truly out of band; the results file records which device was used.
 **Alternatives:** a per-ticket "sent to phone" flag (needs a migration, and the phone could miss requests nobody sent); a separate device approval endpoint (duplicates the approval checks).
 
+## 2026-11-24 — Agent hint files (Phase 5 slice C)
+**Decision:**
+- **What they are:** `/llms.txt` (the llmstxt.org layout: title, summary, link sections) and `/agents.md` (the journey, how approval works with the gated response fields, the web API routes, ways an assistant can identify itself, and the MCP server).
+- **When they're served:** only with `AGENT_HINTS=on`, read at request time; otherwise both return 404.
+- **Wording:** written as declarative descriptions of the site and of what the account holder does, never as directions to the reader. The text lives in `lib/agent-hints.ts` and is checked by the content lint.
+- **Accuracy:** a unit test checks that every API route listed in `/agents.md` exists.
+- **What they deliberately leave out:** the console, the demo credentials and anything that would help bypass approval.
+
+**Why:** FR5, FR41, FR25, control P1, owner decision D7 (hints off for baseline and main runs, on as a comparison variant).
+
 ## Open
 - Apply migration `0005` to production before merging Phase 4.
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.

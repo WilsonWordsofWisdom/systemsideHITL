@@ -1,6 +1,7 @@
 // J01 landing page scenarios (FR5) and baseline headers (S4, W10).
 import { expect, test } from "@playwright/test";
 import { findModelDirectedText } from "../../lib/content";
+import { startVariant } from "./variant";
 
 test("landing page explains the service without addressing models", async ({ page }) => {
   const errors: string[] = [];
@@ -32,4 +33,43 @@ test("landing page explains the service without addressing models", async ({ pag
   expect(headers["content-security-policy"]).toContain("frame-ancestors 'none'");
   expect(headers["x-content-type-options"]).toBe("nosniff");
   expect(errors).toEqual([]);
+});
+
+test("agent hint files are absent in baseline runs (FR41)", async ({ request }) => {
+  expect((await request.get("/llms.txt")).status()).toBe(404);
+  expect((await request.get("/agents.md")).status()).toBe(404);
+});
+
+test("with AGENT_HINTS=on the landing page names the approval steps and links the hint files (FR5, FR41)", async ({
+  page,
+}) => {
+  const variant = await startVariant(3105, { AGENT_HINTS: "on" });
+  try {
+    await page.goto(`${variant.origin}/`);
+    const hints = page.getByRole("region", { name: "Some steps need the account holder" });
+    await expect(hints).toContainText("approved by the account holder with a passkey");
+    await expect(hints.getByRole("link", { name: "/llms.txt" })).toHaveAttribute(
+      "href",
+      "/llms.txt",
+    );
+    await expect(hints.getByRole("link", { name: "/agents.md" })).toHaveAttribute(
+      "href",
+      "/agents.md",
+    );
+    expect(findModelDirectedText(await page.locator("body").innerText())).toEqual([]);
+
+    for (const [file, type] of [
+      ["/llms.txt", "text/plain"],
+      ["/agents.md", "text/markdown"],
+    ]) {
+      const res = await page.request.get(`${variant.origin}${file}`);
+      expect(res.status(), file).toBe(200);
+      expect(res.headers()["content-type"]).toContain(type);
+      const text = await res.text();
+      expect(text).toContain("DemoGov Permits");
+      expect(findModelDirectedText(text), file).toEqual([]);
+    }
+  } finally {
+    await variant.stop();
+  }
 });
