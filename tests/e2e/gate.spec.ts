@@ -1,8 +1,17 @@
 // The gate over HTTP (J02 "gate fires", J07 bypass, FR19, FR21, FR24).
 import { expect, test, type Page } from "@playwright/test";
-import { DEMO, ORIGIN, SECOND, clearLoginLock, expectSignedIn, signIn } from "./helpers";
+import {
+  DEMO,
+  ORIGIN,
+  SECOND,
+  clearLoginLock,
+  expectSignedIn,
+  signIn,
+  resetTicketLimits,
+} from "./helpers";
 
 test.describe.configure({ mode: "serial" });
+test.beforeEach(resetTicketLimits);
 const DRAFT = "00000000-0000-4000-8000-000000000103"; // Winter Lights Walk, complete draft
 
 async function signedIn(page: Page, user: { email: string; name: string }) {

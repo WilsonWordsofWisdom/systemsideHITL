@@ -1,5 +1,17 @@
 import { defineConfig } from "@playwright/test";
+import { spawn } from "node:child_process";
 import { E2E_ORIGIN, E2E_PORT, e2eAppEnv } from "./tests/e2e/env";
+
+// On a Mac, keep the machine from idle-sleeping while the tests run: on battery it
+// slept about a minute after the last keypress and froze runs for minutes
+// (decision 2026-11-23). caffeinate exits with this process; power settings are
+// unchanged.
+if (process.platform === "darwin" && !process.env.CI) {
+  spawn("caffeinate", ["-i", "-w", String(process.pid)], {
+    stdio: "ignore",
+    detached: true,
+  }).unref();
+}
 
 // End-to-end tests run against a production build and a test database (local
 // Docker by default, or the Supabase test project), never the production database.
@@ -13,7 +25,8 @@ export default defineConfig({
   // Tests share one database, so they run one at a time for deterministic results.
   workers: 1,
   fullyParallel: false,
-  use: { baseURL: E2E_ORIGIN },
+  // Keep a trace of any failing test, to diagnose intermittent stalls.
+  use: { baseURL: E2E_ORIGIN, trace: "retain-on-failure" },
   // Uses the installed Google Chrome locally; CI installs a browser instead.
   projects: [{ name: "chrome", use: { channel: process.env.CI ? undefined : "chrome" } }],
   webServer: {

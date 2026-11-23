@@ -11,9 +11,11 @@ import {
   enrolPasskey,
   handoffTicket,
   signIn,
+  resetTicketLimits,
 } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
+test.beforeEach(resetTicketLimits);
 test.afterEach(removeAuthenticators);
 const SECOND_APP = "00000000-0000-4000-8000-000000000201";
 

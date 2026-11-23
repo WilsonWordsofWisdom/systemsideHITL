@@ -13,9 +13,11 @@ import {
   handoffTicket,
   signIn,
   testDb,
+  resetTicketLimits,
 } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
+test.beforeEach(resetTicketLimits);
 test.afterEach(removeAuthenticators);
 
 const csrfOf = async (page: Page) =>

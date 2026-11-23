@@ -5,56 +5,12 @@ import { hash } from "@node-rs/argon2";
 import { sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { applications, users } from "../lib/db/schema";
+import { DEMO_USER_ID, SECOND_USER_ID, seedApplications, seedUsers } from "../lib/db/seed-data";
 
 // Accepts the postgres-js database in production and PGlite in tests.
 type SeedDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
-export const DEMO_USER_ID = "00000000-0000-4000-8000-000000000001";
-export const SECOND_USER_ID = "00000000-0000-4000-8000-000000000002";
-
-const seedUsers = [
-  { id: DEMO_USER_ID, email: "demo@demogov.test", name: "Demo User" },
-  { id: SECOND_USER_ID, email: "second@demogov.test", name: "Second User" },
-];
-
-const seedApplications = [
-  {
-    id: "00000000-0000-4000-8000-000000000101",
-    userId: DEMO_USER_ID,
-    status: "paid" as const,
-    title: "Summer Street Fair",
-    details: { date: "2026-06-20", attendance: 300, location: "High Street" },
-    submittedAt: new Date("2026-05-02T10:00:00Z"),
-    paidAt: new Date("2026-05-02T10:05:00Z"),
-  },
-  {
-    id: "00000000-0000-4000-8000-000000000102",
-    userId: DEMO_USER_ID,
-    status: "submitted" as const,
-    title: "Autumn Craft Market",
-    details: { date: "2026-10-10", attendance: 120, location: "Town Hall car park" },
-    submittedAt: new Date("2026-09-01T09:30:00Z"),
-    paidAt: null,
-  },
-  {
-    id: "00000000-0000-4000-8000-000000000103",
-    userId: DEMO_USER_ID,
-    status: "draft" as const,
-    title: "Winter Lights Walk",
-    details: { date: "2026-12-18", attendance: 60, location: "Riverside Park" },
-    submittedAt: null,
-    paidAt: null,
-  },
-  {
-    id: "00000000-0000-4000-8000-000000000201",
-    userId: SECOND_USER_ID,
-    status: "paid" as const,
-    title: "Neighbourhood Garage Sale",
-    details: { date: "2026-08-08", attendance: 40, location: "Elm Close" },
-    submittedAt: new Date("2026-07-15T14:00:00Z"),
-    paidAt: new Date("2026-07-15T14:10:00Z"),
-  },
-];
+export { DEMO_USER_ID, SECOND_USER_ID };
 
 export async function seed(db: SeedDb, password: string | undefined) {
   if (!password || password.length < 12) {

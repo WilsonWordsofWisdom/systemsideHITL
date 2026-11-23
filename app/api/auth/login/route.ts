@@ -19,6 +19,7 @@ import {
 } from "@/lib/ratelimit";
 import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/hitl/classifier";
 import { clientContextHash, loginClassifierInput, recordLoginRisk } from "@/lib/hitl/inputs";
+import { runIdFromRequest } from "@/lib/console/run";
 import { headerFacts, parseSignals } from "@/lib/signals";
 
 const LoginForm = z.object({
@@ -106,6 +107,7 @@ export async function POST(request: Request) {
         classification: loginClassification(actor),
       },
       clientCtxHash: clientContextHash(request, secret),
+      runId: runIdFromRequest(request),
     },
     now,
   );

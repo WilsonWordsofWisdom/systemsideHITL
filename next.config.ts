@@ -30,7 +30,12 @@ const nextConfig: NextConfig = {
     },
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // The console is admin only and must not be indexed (FR39).
+      { source: "/console/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
+      { source: "/console", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
+    ];
   },
 };
 

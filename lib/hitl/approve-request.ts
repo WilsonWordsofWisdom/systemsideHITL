@@ -5,6 +5,9 @@ import { getSessionSecret } from "../auth/crypto";
 import { getApproverSession } from "../auth/current";
 import { verifyCsrf } from "../auth/session";
 import { getDb } from "../db/server";
+import { eq } from "drizzle-orm";
+import { runIdFromRequest } from "../console/run";
+import { sessions } from "../db/schema";
 import { clientIp, ipHash, isSameOrigin } from "../http";
 import { logEvent } from "../log";
 import { lockedUntil, recordFailure } from "../ratelimit";
@@ -49,6 +52,8 @@ export async function approveContext(
   const userKey = `approve:user:${approver.user.id}`;
   const ipKey = `approve:ip:${ip}`;
 
+  // Approval rows belong to the run of the session that asked for approval.
+  let runId: string | null = null;
   const record: ApproveContext["record"] = async (outcome, reason, extra = {}) => {
     await logEvent(db, {
       route: "web",
@@ -56,6 +61,7 @@ export async function approveContext(
       pathOrTool: new URL(request.url).pathname,
       userId: approver.user.id,
       sessionId: approver.session.id,
+      runId: runId ?? runIdFromRequest(request),
       ticketId,
       outcome,
       reason,
@@ -73,6 +79,14 @@ export async function approveContext(
     return fail(429, "rate_limited");
   }
   const ticket = await getTicket(db, ticketId, now);
+  if (ticket?.requestingSessionId) {
+    const [requester] = await db
+      .select({ runId: sessions.runId })
+      .from(sessions)
+      .where(eq(sessions.id, ticket.requestingSessionId))
+      .limit(1);
+    runId = requester?.runId ?? null;
+  }
   // Another user's ticket looks the same as a missing one (no probing).
   if (!ticket || ticket.userId !== approver.user.id) {
     await record("blocked", ticket ? "wrong_account" : "not_found");
