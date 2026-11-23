@@ -105,7 +105,8 @@ export async function validateSession(
   if (!token) return null;
   const id = sha256Hex(token);
   const [row] = await db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
-  if (!row || row.revokedAt) return null;
+  // MCP sessions exist only behind a bearer token, never as a cookie.
+  if (!row || row.revokedAt || row.signinMethod === "oauth_mcp") return null;
   if (now.getTime() - row.lastSeenAt.getTime() > IDLE_TIMEOUT_MS) {
     await revokeSession(db, id, "idle", now);
     return null;

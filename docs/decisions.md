@@ -249,6 +249,19 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 **Why:** FR30, controls M1-M3, the MCP authorization spec.
 **Not yet:** OAuth Client ID Metadata Documents (URL client IDs) and refresh tokens; add if a live client needs them.
 
+## 2026-11-23 — /mcp endpoint and tools (Phase 4 slice B)
+**Decision:**
+- **The endpoint:** `/mcp` (the OAuth resource) serves Streamable HTTP through `createMcpHandler` for both 2026-07-28 and the 2025 revisions.
+- **Authentication:** every request needs a bearer token from our OAuth server, verified for signature, issuer, audience `<origin>/mcp`, expiry, actor claim, issuance and revocation. Without one the answer is `401` with `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"`, plus `error="invalid_token"` for a bad token.
+- **Sessions:** each OAuth client plus user gets one server-side session row (`signinMethod = oauth_mcp`, login class `declared_agent`, `declared_agent = true`), so the guard, risk state, tickets and console work unchanged. Tickets are bound to that session (and record the client), so they stay redeemable by the same client and user across tokens, and another client gets `wrong_session`. The row ID is `SHA-256("mcp:" + HMAC(SESSION_SECRET, client and user))`, so it can't be guessed, and `validateSession` refuses `oauth_mcp` rows as cookies.
+- **Tools:** the nine journey tools plus `get_approval_status` and `get_journey_state`. Mutating tools call the same `hitlGuard` with the client as tier A protocol identity (always `declared_agent`, high confidence), log the tool name, and take an optional `hitl_ticket_id`.
+- **Gate responses (`tool_result` mode, the default):** a gated call returns `requires_human_approval` with `isError: false`, the ticket, the approval link and `resume: { poll_tool: "get_approval_status", retry_with_argument: "hitl_ticket_id" }`. Denials, invalid tickets and journey errors return `isError: true`.
+- **Logging and runs:** read-only tools are logged too. A tester tags a run by adding `?run=<id>` to the MCP server URL.
+- **Descriptions:** neutral, each stating its risk level, and checked by the content lint.
+
+**Why:** FR19, FR29, FR31, FR32 (`tool_result`), controls M1, M4, C4, P1.
+**Next (slice C):** `MCP_GATE_MODE=elicitation` (`input_required` on 2026-07-28, URL elicitation on 2025-11-25), client capability logging, `MCP_STEP_SCOPED_TOOLS`.
+
 ## Open
 - Apply migration `0005` to production before merging Phase 4.
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.

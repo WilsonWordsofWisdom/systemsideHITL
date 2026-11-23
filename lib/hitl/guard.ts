@@ -50,9 +50,12 @@ export type GuardResult =
 export interface GuardInput {
   db: AppDb;
   request: Request;
-  route: "web" | "api";
+  route: "web" | "api" | "mcp";
   userId: string;
   session: SessionRow;
+  // MCP: the OAuth client acting for the user. It is tier A evidence (the token
+  // names the client), binds tickets to the client, and the tool name is logged.
+  mcp?: { clientId: string; tool: string };
   action: string;
   resourceId: string | null;
   body: Record<string, string>;
@@ -117,6 +120,9 @@ export async function hitlGuard(
       secret: input.secret,
       now,
     });
+    if (input.mcp) {
+      classifierInput.protocolAgent = { source: "mcp_token", agent: input.mcp.clientId };
+    }
     actor = deps.classify(classifierInput, cfg);
     const next = nextRiskState(session.riskState, {
       agentEvidence: FRESH_EVIDENCE_TIERS.has(actor.tier),
@@ -164,7 +170,7 @@ export async function hitlGuard(
     logEvent(db, {
       route: input.route,
       method: request.method,
-      pathOrTool: new URL(request.url).pathname,
+      pathOrTool: input.mcp?.tool ?? new URL(request.url).pathname,
       userId: input.userId,
       sessionId: session.id,
       runId: session.runId ?? runIdFromRequest(request),
@@ -276,6 +282,7 @@ export async function hitlGuard(
       preview: { ...preview, request: stripVolatile(input.action, input.body) },
       actor: { class: actor.class, tier: actor.tier, score: actor.score, facts: actor.facts },
       sessionId: session.id,
+      clientId: input.mcp?.clientId ?? null,
       ttlSeconds: input.ttlSeconds,
     },
     now,

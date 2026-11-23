@@ -1,55 +1,19 @@
 // The MCP OAuth server end to end (FR30, controls M1-M3): metadata, registration,
 // sign-in and consent in the browser, code exchange with PKCE, and refusals.
-import { createHash, randomBytes } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { randomBytes } from "node:crypto";
+import { expect, test } from "@playwright/test";
 import { decodeJwt } from "jose";
-import { DEMO, ORIGIN, PASSWORD } from "./helpers";
+import { ORIGIN } from "./helpers";
+import {
+  CALLBACK,
+  authorizeUrl,
+  captureCallback,
+  register,
+  signInHere,
+  verifier,
+} from "./oauth-helpers";
 
 test.describe.configure({ mode: "serial" });
-const CALLBACK = "http://127.0.0.1:9/callback";
-
-const verifier = randomBytes(32).toString("base64url");
-const challenge = createHash("sha256").update(verifier).digest("base64url");
-
-async function register(page: Page, name = "Test MCP agent") {
-  const res = await page.request.post("/api/oauth/register", {
-    data: { client_name: name, redirect_uris: [CALLBACK] },
-  });
-  expect(res.status()).toBe(201);
-  return (await res.json()).client_id as string;
-}
-
-function authorizeUrl(clientId: string, over: Record<string, string> = {}) {
-  const q = new URLSearchParams({
-    response_type: "code",
-    client_id: clientId,
-    redirect_uri: CALLBACK,
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-    state: "state-123",
-    scope: "mcp",
-    resource: `${ORIGIN}/mcp`,
-    ...over,
-  });
-  return `/oauth/authorize?${q}`;
-}
-
-// The client's loopback callback, answered by the test instead of a real server.
-async function captureCallback(page: Page) {
-  let seen: URL | null = null;
-  await page.route("http://127.0.0.1:9/**", (route) => {
-    seen = new URL(route.request().url());
-    return route.fulfill({ status: 200, contentType: "text/html", body: "<p>callback</p>" });
-  });
-  return () => seen as URL | null;
-}
-
-async function signInHere(page: Page) {
-  await page.getByLabel("Email address").fill(DEMO.email);
-  await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-}
-
 test("metadata is published for the authorization server and the /mcp resource", async ({
   request,
 }) => {
