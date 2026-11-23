@@ -23,6 +23,9 @@ const EXEMPT: Record<string, string> = {
   "app/api/hitl/[ticketId]/approve/route.ts":
     "approval: needs the ticket's user and a UV passkey assertion (FR20)",
   "app/api/hitl/[ticketId]/reject/route.ts": "decline: the ticket's user only, by approveContext",
+  "app/api/console/login/route.ts": "console sign-in: admin secret, rate limited (L2)",
+  "app/api/console/logout/route.ts": "console sign-out: admin cookie and CSRF (L2)",
+  "app/api/console/runs/route.ts": "test metadata (ground truth), admin only; no journey state",
 };
 
 function routeFiles(dir: string): string[] {

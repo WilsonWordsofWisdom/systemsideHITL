@@ -11,10 +11,12 @@ import {
   enrolPasskey,
   handoffTicket,
   testDb,
+  resetTicketLimits,
 } from "./helpers";
 import { startVariant, type Variant } from "./variant";
 
 test.describe.configure({ mode: "serial" });
+test.beforeEach(resetTicketLimits);
 
 // The account holder's phone: its own passkey, used to approve every request.
 let phoneContext: BrowserContext;

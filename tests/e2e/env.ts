@@ -7,6 +7,8 @@ import { existsSync, readFileSync } from "node:fs";
 export const E2E_PORT = 3100;
 export const E2E_ORIGIN = `http://localhost:${E2E_PORT}`;
 export const E2E_DEMO_PASSWORD = "e2e-demo-password-123";
+// Test-only console secret for the local e2e server; not used anywhere else.
+export const E2E_ADMIN_SECRET = "e2e-admin-secret-0123456789";
 
 function readEnvFile(path: string): Record<string, string> {
   return existsSync(path) ? parse(readFileSync(path)) : {};
@@ -86,5 +88,6 @@ export function e2eAppEnv(origin: string): Record<string, string> {
     SELF_DECLARE_UI: "on",
     // Open so the e2e suite can enrol a virtual passkey; the closed state is unit-tested.
     PASSKEY_ENROLMENT: "open",
+    ADMIN_SECRET: E2E_ADMIN_SECRET,
   };
 }

@@ -3,6 +3,7 @@
 // calls it before the action runs. Every call writes a request_log row.
 import { escalateRisk, nextRiskState, type SessionRow } from "../auth/session";
 import type { AppDb } from "../db/types";
+import { runIdFromRequest } from "../console/run";
 import { clientIp, ipHash } from "../http";
 import { logEvent } from "../log";
 import { lockedUntil, recordFailure, type LimitRule } from "../ratelimit";
@@ -166,6 +167,7 @@ export async function hitlGuard(
       pathOrTool: new URL(request.url).pathname,
       userId: input.userId,
       sessionId: session.id,
+      runId: session.runId ?? runIdFromRequest(request),
       actorClass: actor.class,
       actorSignals: {
         tier: actor.tier,

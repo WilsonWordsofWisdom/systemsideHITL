@@ -89,6 +89,8 @@ export const sessions = pgTable(
     clientCtxHash: text("client_ctx_hash"),
     // Approval-only sessions can approve tickets but not act on the journey (control W11).
     approvalOnly: boolean("approval_only").notNull().default(false),
+    // Test run the session belongs to, from ?run= on the start URL (FR40).
+    runId: text("run_id"),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokeReason: text("revoke_reason"),
   },
@@ -237,6 +239,19 @@ export const webauthnChallenges = pgTable(
   },
   (t) => [index("webauthn_challenges_expiry_idx").on(t.expiresAt)],
 ).enableRLS();
+
+// Test runs and their ground truth, set by the tester in the console (FR16,
+// FR40). Test metadata only: the classifier never reads this table (A6).
+export const runs = pgTable("runs", {
+  id: text("id").primaryKey(),
+  // Which agent (or person) really drove the run, e.g. "ChatGPT agent, web".
+  agentLabel: text("agent_label"),
+  // Who was really acting: agent, human or mixed (handover runs).
+  actualActor: text("actual_actor"),
+  notes: text("notes"),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}).enableRLS();
 
 export const mcpClients = pgTable("mcp_clients", {
   id: uuid("id").primaryKey().defaultRandom(),

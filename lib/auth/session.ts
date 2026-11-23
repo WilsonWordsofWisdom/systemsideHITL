@@ -21,6 +21,7 @@ export interface NewSession {
   declaredAgent?: boolean;
   approvalOnly?: boolean;
   clientCtxHash?: string | null;
+  runId?: string | null;
 }
 
 export async function createSession(db: AppDb, input: NewSession, now = new Date()) {
@@ -39,6 +40,7 @@ export async function createSession(db: AppDb, input: NewSession, now = new Date
       declaredAgent: input.declaredAgent ?? false,
       approvalOnly: input.approvalOnly ?? false,
       clientCtxHash: input.clientCtxHash ?? null,
+      runId: input.runId ?? null,
     })
     .returning();
   return { token, session };

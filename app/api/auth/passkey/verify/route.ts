@@ -17,6 +17,7 @@ import { logEvent } from "@/lib/log";
 import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/hitl/classifier";
 import { clientContextHash, loginClassifierInput, recordLoginRisk } from "@/lib/hitl/inputs";
 import { TICKET_ID_PATTERN } from "@/lib/hitl/tickets";
+import { runIdFromRequest } from "@/lib/console/run";
 import { headerFacts, parseSignals } from "@/lib/signals";
 
 const Body = z.object({
@@ -133,6 +134,7 @@ export async function POST(request: Request) {
         classification: loginClassification(actor),
       },
       clientCtxHash: clientContextHash(request, secret),
+      runId: runIdFromRequest(request),
     },
     now,
   );

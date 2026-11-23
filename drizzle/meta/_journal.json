@@ -29,6 +29,13 @@
       "when": 1795416770127,
       "tag": "0003_phase2_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795422315339,
+      "tag": "0004_phase3_console",
+      "breakpoints": true
     }
   ]
 }

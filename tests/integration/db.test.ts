@@ -49,6 +49,7 @@ describe("database", () => {
       "passkeys",
       "rate_limits",
       "request_log",
+      "runs",
       "session_events",
       "sessions",
       "users",

@@ -1,8 +1,9 @@
 // Session risk and handover (J06; FR35-FR38, controls A8, A9; T10c).
 import { expect, request, test, type Page } from "@playwright/test";
-import { DEMO, ORIGIN, expectSignedIn, signIn, testDb } from "./helpers";
+import { DEMO, ORIGIN, expectSignedIn, signIn, testDb, resetTicketLimits } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
+test.beforeEach(resetTicketLimits);
 const DRAFT = "00000000-0000-4000-8000-000000000103"; // Winter Lights Walk
 
 async function sessionRow(page: Page) {

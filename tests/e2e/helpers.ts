@@ -40,6 +40,19 @@ export async function clearLoginLock(email: string) {
   }
 }
 
+// Every test acts as the same demo user, so a full run creates more approval
+// tickets per minute than the per-user limit allows (control T9, tested on its
+// own in tests/integration/guard.test.ts). Specs that create tickets clear the
+// counters before each test.
+export async function resetTicketLimits() {
+  const sql = testDb();
+  try {
+    await sql`delete from rate_limits where key like 'ticket:%'`;
+  } finally {
+    await sql.end();
+  }
+}
+
 // The account holder approves on /approve with the passkey in this browser.
 export async function approveWithPasskey(page: Page, ticketId: string) {
   await page.goto(`/approve/${ticketId}`);
