@@ -1,5 +1,5 @@
 // The observability console (J11; FR16, FR39, FR40, controls L2, L4, C6).
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, request, test, type Browser, type Page } from "@playwright/test";
 import { E2E_ADMIN_SECRET } from "./env";
 import {
   DEMO,
@@ -9,12 +9,16 @@ import {
   signIn,
   testDb,
   resetTicketLimits,
+  addAuthenticator,
+  approveWithPasskey,
+  enrolPasskey,
+  removeAuthenticators,
 } from "./helpers";
 import { startVariant } from "./variant";
 
 test.describe.configure({ mode: "serial" });
 test.beforeEach(resetTicketLimits);
-const DRAFT = "00000000-0000-4000-8000-000000000103"; // Winter Lights Walk
+test.afterEach(removeAuthenticators);
 
 async function adminPage(browser: Browser, origin = ORIGIN) {
   const context = await browser.newContext();
@@ -26,20 +30,31 @@ async function adminPage(browser: Browser, origin = ORIGIN) {
   return page;
 }
 
-// The agent's browser, started from a run link (FR40).
+// The agent's browser, started from a run link (FR40), submitting its own fresh
+// draft so tests don't depend on each other's applications.
 async function botRun(browser: Browser, run: string) {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`/?run=${run}`);
   await signIn(page, DEMO.email);
   await expectSignedIn(page, DEMO.name);
-  await page.goto(`/apply/${DRAFT}/declare`);
+  const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute("content"))!;
+  const headers = { origin: ORIGIN, "x-csrf-token": csrf };
+  const created = await page.request
+    .post("/api/applications", { headers, data: { title: `Run ${run} picnic` } })
+    .then((r) => r.json());
+  const id = created.application.id as string;
+  await page.request.post(`/api/applications/${id}/details`, {
+    headers,
+    data: { date: "2026-12-12", attendance: "80", location: "Riverside Park" },
+  });
+  await page.goto(`/apply/${id}/declare`);
   await page
     .getByLabel("I declare that the information I have given is true and complete.")
     .check();
   await page.getByRole("button", { name: "Submit application" }).click();
   const ticket = await handoffTicket(page, "submit_application");
-  return { page, ticket, close: () => context.close() };
+  return { page, id, ticket, close: () => context.close() };
 }
 
 const table = (page: Page) => page.getByRole("table");
@@ -146,6 +161,112 @@ test("observe mode shows a banner in the console (C6)", async ({ browser }) => {
   } finally {
     await variant.stop();
   }
+});
+
+test("the ticket and session timelines show who asked, who approved and a handover (FR39)", async ({
+  browser,
+}) => {
+  const bot = await botRun(browser, "r50");
+  // The account holder approves on their own device with a passkey.
+  const phoneContext = await browser.newContext();
+  const phone = await phoneContext.newPage();
+  await addAuthenticator(phone);
+  await enrolPasskey(phone);
+  await approveWithPasskey(phone, bot.ticket);
+  const csrf = (await bot.page.locator('meta[name="csrf-token"]').getAttribute("content"))!;
+  const retry = await bot.page.request.post(`/api/applications/${bot.id}/submit`, {
+    headers: { origin: ORIGIN, "x-csrf-token": csrf, "x-hitl-ticket": bot.ticket },
+    data: { declaration: "on" },
+  });
+  expect(retry.status()).toBe(200);
+
+  // Then the bot's cookie is used from a script: a probable handover.
+  const token = (await bot.page.context().cookies()).find((c) => c.name === "dg_session")!.value;
+  const script = await request.newContext({
+    baseURL: ORIGIN,
+    userAgent: "python-requests/2.32",
+    extraHTTPHeaders: { cookie: `dg_session=${token}` },
+  });
+  await script.post("/api/applications", {
+    headers: { origin: ORIGIN, "x-csrf-token": csrf },
+    data: { title: "From a script" },
+  });
+  await script.dispose();
+
+  const admin = await adminPage(browser);
+  await admin.goto("/console?run=r50");
+  await table(admin)
+    .getByRole("link", { name: bot.ticket.slice(0, 12) })
+    .first()
+    .click();
+  const panel = admin.getByRole("complementary", { name: "Details" });
+  const ticketTab = panel.getByRole("tabpanel", { name: "Ticket" });
+  await expect(ticketTab).toContainText("Created");
+  await expect(ticketTab).toContainText("Requested by suspected_agent");
+  await expect(ticketTab).toContainText("Approved");
+  await expect(ticketTab).toContainText("Passkey (UV)");
+  await expect(ticketTab).toContainText("to approve");
+  await expect(ticketTab).toContainText("Consumed");
+  await expect(ticketTab).toContainText("executed 1 time(s)");
+
+  await panel.getByRole("tab", { name: "Session" }).click();
+  const sessionTab = panel.getByRole("tabpanel", { name: "Session" });
+  await expect(sessionTab).toContainText("Login class");
+  await expect(sessionTab).toContainText("probable handover");
+  await expect(sessionTab).toContainText("client context changed");
+
+  await bot.close();
+  await phoneContext.close();
+  await admin.context().close();
+});
+
+test("new requests appear in the open console without a reload", async ({ browser }) => {
+  const admin = await adminPage(browser);
+  await admin.goto("/console?run=r70");
+  await expect(table(admin)).toContainText("No requests in this run yet.");
+  const bot = await botRun(browser, "r70");
+  await expect(table(admin)).toContainText(bot.ticket.slice(0, 12), { timeout: 10_000 });
+  await bot.close();
+  await admin.context().close();
+});
+
+test("Reset demo data clears logs, tickets and sessions and restores the seed (L3)", async ({
+  browser,
+}) => {
+  const bot = await botRun(browser, "r60");
+  const admin = await adminPage(browser);
+  await admin.getByRole("button", { name: "Reset demo data" }).click();
+  const dialog = admin.getByRole("dialog", { name: "Reset demo data?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Yes, reset demo data" }).click();
+  await expect(admin.getByRole("main").getByRole("status").first()).toContainText(
+    "Demo data reset",
+  );
+
+  // Only the reset itself is left in the log.
+  const rows = table(admin).locator("tbody tr");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("console_reset");
+
+  // The bot was signed out, and the seed applications are back.
+  await bot.page.goto("/applications");
+  await expect(bot.page).toHaveURL(/\/login/);
+  const sql = testDb();
+  try {
+    const apps = await sql`select title, status from applications order by title`;
+    expect(apps.map((a) => a.title)).toEqual([
+      "Autumn Craft Market",
+      "Neighbourhood Garage Sale",
+      "Summer Street Fair",
+      "Winter Lights Walk",
+    ]);
+    const [{ n }] = await sql`select count(*)::int as n from hitl_tickets`;
+    expect(n).toBe(0);
+  } finally {
+    await sql.end();
+  }
+  await bot.close();
+  await admin.context().close();
 });
 
 // Last in this file: it locks console sign-in from this address for 10 minutes.

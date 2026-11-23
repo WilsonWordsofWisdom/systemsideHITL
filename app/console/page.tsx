@@ -7,7 +7,10 @@ import { getAdmin } from "@/lib/console/current";
 import { ACTUAL_ACTORS, listRequests, listRuns, signalsSummary } from "@/lib/console/queries";
 import { validRunId } from "@/lib/console/run";
 import { getDb } from "@/lib/db/server";
+import { approvedNotRedeemed, ticketStates } from "@/lib/console/details";
 import { getClassifierConfig } from "@/lib/hitl/classifier";
+import { LiveRefresh, ResetDemoData } from "./console-client";
+import { DetailPanel } from "./detail-panel";
 
 const LOGIN_ERRORS: Record<string, string> = {
   invalid: "That admin secret isn't right.",
@@ -66,6 +69,20 @@ export default async function ConsolePage({ searchParams }: PageProps<"/console"
     session: param(q.session) || null,
   };
   const [rows, runList] = await Promise.all([listRequests(db, filters), listRuns(db)]);
+  const states = await ticketStates(db, [
+    ...new Set(rows.map((r) => r.ticketId).filter((t): t is string => !!t)),
+  ]);
+  // The detail panel: a ticket, or a session, picked from the table.
+  const detail = { ticket: param(q.ticket) || null, sid: param(q.sid) || null };
+  const tab = param(q.tab) === "session" ? "session" : "ticket";
+  const link = (extra: Record<string, string>) =>
+    `/console?${new URLSearchParams({
+      ...(Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) as Record<
+        string,
+        string
+      >),
+      ...extra,
+    })}`;
   const labels = [...new Set(runList.map((r) => r.agentLabel).filter(Boolean))] as string[];
   const selectedRun = runList.find((r) => r.id === filters.run);
   const origin = appConfig().appOrigin;
@@ -86,7 +103,11 @@ export default async function ConsolePage({ searchParams }: PageProps<"/console"
             Policy
           </Link>
         </nav>
-        <form action="/api/console/logout" method="post" className="ml-auto">
+        <div className="ml-auto flex items-center gap-4">
+          <LiveRefresh />
+          <ResetDemoData csrf={admin.csrf} />
+        </div>
+        <form action="/api/console/logout" method="post">
           <input type="hidden" name="csrf" value={admin.csrf} />
           <button type="submit" className={btn.text}>
             Sign out of the console
@@ -153,6 +174,12 @@ export default async function ConsolePage({ searchParams }: PageProps<"/console"
         </a>
       </form>
 
+      {param(q.reset) === "1" && (
+        <Notice tone="success" title="Demo data reset">
+          Logs, tickets and sessions were cleared and the seed applications restored.
+        </Notice>
+      )}
+
       {filters.run && (
         <form
           action="/api/console/runs"
@@ -212,84 +239,135 @@ export default async function ConsolePage({ searchParams }: PageProps<"/console"
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-outline-variant bg-white">
-        <table className="w-full text-left text-sm">
-          <caption className="px-4 py-3 text-left text-on-surface-variant">
-            Requests, newest first · weights {getClassifierConfig().version}
-            {selectedRun?.agentLabel && (
-              <>
-                {" "}
-                · ground truth: <strong>{selectedRun.agentLabel}</strong>
-                {selectedRun.actualActor && ` (${selectedRun.actualActor})`}
-              </>
-            )}
-          </caption>
-          <thead className="sticky top-0 bg-surface-container-high">
-            <tr>
-              {[
-                "Time",
-                "Route",
-                "Agent / UA",
-                "Class",
-                "Signals",
-                "Action",
-                "Decision",
-                "Ticket",
-                "Outcome",
-              ].map((h) => (
-                <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
+      <div
+        className={
+          detail.ticket || detail.sid ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]" : ""
+        }
+      >
+        <div className="overflow-x-auto rounded-xl border border-outline-variant bg-white">
+          <table className="w-full text-left text-sm">
+            <caption className="px-4 py-3 text-left text-on-surface-variant">
+              Requests, newest first · weights {getClassifierConfig().version}
+              {selectedRun?.agentLabel && (
+                <>
+                  {" "}
+                  · ground truth: <strong>{selectedRun.agentLabel}</strong>
+                  {selectedRun.actualActor && ` (${selectedRun.actualActor})`}
+                </>
+              )}
+            </caption>
+            <thead className="sticky top-0 bg-surface-container-high">
               <tr>
-                <td colSpan={9} className="px-3 py-6 text-on-surface-variant">
-                  {filters.run ? "No requests in this run yet." : "No requests yet."}
-                </td>
+                {[
+                  "Time",
+                  "Route",
+                  "Agent / UA",
+                  "Class",
+                  "Signals",
+                  "Action",
+                  "Decision",
+                  "Ticket",
+                  "Outcome",
+                ].map((h) => (
+                  <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ) : (
-              rows.map((r) => {
-                const signals = r.actorSignals as { action?: string };
-                const wrongSession = r.reason === "ticket:wrong_session";
-                return (
-                  <tr key={r.id} className="border-t border-outline-variant align-top">
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <time dateTime={r.ts.toISOString()}>{r.ts.toISOString().slice(11, 19)}</time>
-                    </td>
-                    <td className="px-3 py-2">{r.route}</td>
-                    <td className="whitespace-nowrap px-3 py-2" title={r.userAgent ?? ""}>
-                      {shortAgent(r.userAgent)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <ClassChip value={r.actorClass} />
-                    </td>
-                    <td className="px-3 py-2">{signalsSummary(r.actorSignals)}</td>
-                    <td className="px-3 py-2">{signals.action ?? r.pathOrTool}</td>
-                    <td className="px-3 py-2">
-                      <DecisionChip value={r.policyDecision} />
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">
-                      {shortId(r.ticketId, 12)}
-                    </td>
-                    <td className="px-3 py-2">
-                      {r.outcome}
-                      {r.reason && (
-                        <span
-                          className={`block text-xs ${wrongSession ? "font-medium text-[#6B4E00]" : "text-on-surface-variant"}`}
-                        >
-                          {wrongSession ? "wrong session (not an agent error)" : r.reason}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-3 py-6 text-on-surface-variant">
+                    {filters.run ? "No requests in this run yet." : "No requests yet."}
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r) => {
+                  const signals = r.actorSignals as { action?: string };
+                  const wrongSession = r.reason === "ticket:wrong_session";
+                  return (
+                    <tr key={r.id} className="border-t border-outline-variant align-top">
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {r.sessionId ? (
+                          <Link
+                            href={link({ sid: r.sessionId, tab: "session" })}
+                            className="text-primary underline-offset-4 hover:underline"
+                            aria-label={`Session ${r.sessionId.slice(0, 8)} at ${r.ts.toISOString().slice(11, 19)}`}
+                          >
+                            <time dateTime={r.ts.toISOString()}>
+                              {r.ts.toISOString().slice(11, 19)}
+                            </time>
+                          </Link>
+                        ) : (
+                          <time dateTime={r.ts.toISOString()}>
+                            {r.ts.toISOString().slice(11, 19)}
+                          </time>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">{r.route}</td>
+                      <td className="whitespace-nowrap px-3 py-2" title={r.userAgent ?? ""}>
+                        {shortAgent(r.userAgent)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <ClassChip value={r.actorClass} />
+                      </td>
+                      <td className="px-3 py-2">{signalsSummary(r.actorSignals)}</td>
+                      <td className="px-3 py-2">{signals.action ?? r.pathOrTool}</td>
+                      <td className="px-3 py-2">
+                        <DecisionChip value={r.policyDecision} />
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">
+                        {r.ticketId ? (
+                          <Link
+                            href={link({ ticket: r.ticketId, tab: "ticket" })}
+                            className="text-primary underline-offset-4 hover:underline"
+                          >
+                            {shortId(r.ticketId, 12)}
+                          </Link>
+                        ) : (
+                          "–"
+                        )}
+                        {r.ticketId &&
+                          states.get(r.ticketId) &&
+                          approvedNotRedeemed(states.get(r.ticketId)!) && (
+                            <span className="mt-1 block rounded bg-warning-container px-1 font-sans text-[11px] text-on-warning-container">
+                              approved, not redeemed
+                            </span>
+                          )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {r.outcome}
+                        {r.reason && (
+                          <span
+                            className={`block text-xs ${wrongSession ? "font-medium text-[#6B4E00]" : "text-on-surface-variant"}`}
+                          >
+                            {wrongSession ? "wrong session (not an agent error)" : r.reason}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {(detail.ticket || detail.sid) && (
+          <DetailPanel
+            ticketId={detail.ticket}
+            sessionId={detail.sid}
+            tab={tab}
+            tabLink={(t) =>
+              link({
+                ...(detail.ticket ? { ticket: detail.ticket } : {}),
+                ...(detail.sid ? { sid: detail.sid } : {}),
+                tab: t,
               })
-            )}
-          </tbody>
-        </table>
+            }
+            closeLink={link({})}
+          />
+        )}
       </div>
     </>
   );

@@ -26,6 +26,7 @@ const EXEMPT: Record<string, string> = {
   "app/api/console/login/route.ts": "console sign-in: admin secret, rate limited (L2)",
   "app/api/console/logout/route.ts": "console sign-out: admin cookie and CSRF (L2)",
   "app/api/console/runs/route.ts": "test metadata (ground truth), admin only; no journey state",
+  "app/api/console/reset/route.ts": "admin-only demo data reset, confirmed and logged (L3)",
 };
 
 function routeFiles(dir: string): string[] {
