@@ -43,13 +43,16 @@ describe("database", () => {
     );
     expect(rows.map((r) => r.relname).sort()).toEqual([
       "applications",
+      "client_signals",
       "hitl_tickets",
       "mcp_clients",
       "passkeys",
+      "rate_limits",
       "request_log",
       "session_events",
       "sessions",
       "users",
+      "webauthn_challenges",
     ]);
     expect(rows.filter((r) => !r.relrowsecurity).map((r) => r.relname)).toEqual([]);
   });
