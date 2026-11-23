@@ -216,9 +216,26 @@ Migration `0003` was applied to production before PR #5 was merged (4 migrations
 **Why:** FR39, design.md 4.8, controls L3, A3; J11.
 **Alternatives:** resetting passkeys too (would remove the owner's enrolled approver passkeys on production); a reset confirmation page instead of a dialog.
 
+## 2026-11-23 — Phase 3 deployed
+Migration `0004` was applied to production before PR #6 was merged (5 migrations; `runs` with RLS, `sessions.run_id`). The merge deployed `4a57323` automatically. Verified on production: `/console` serves the sign-in with `X-Robots-Tag: noindex, nofollow` and the `noindex` meta tag; the landing page has no console link; `/?run=prodcheck1` sets an HttpOnly run cookie and the following sign-in is stored with that run; a demo-user session gets the console sign-in and a `403` on export. `ADMIN_SECRET` is not yet set on production, so the console shows "not set up".
+
+## 2026-11-23 — Phase 4 spike: MCP SDK 2.x, both revisions, inside Next.js
+**Findings (from the published packages, read without running them, then tested):**
+- `@modelcontextprotocol/sdk` 1.32.2 (latest 1.x, 2026-10-23) supports protocol revisions only up to 2025-11-25.
+- The split 2.x SDK, `@modelcontextprotocol/server`, `client` and `core` 2.4.0 (2026-10-23, same maintainers, about 34M weekly downloads for `server`), serves both eras. Revision 2026-07-28 ("modern") is negotiated through `server/discover`, and the 2025 revisions ("legacy") through `initialize`, with a codec chosen per request. `createMcpHandler(factory, { legacy: "stateless" })` serves both from one factory as a web-standard `Request` -> `Response` handler, building a fresh server per request. It performs no token verification: `authInfo` is passed through to tools.
+- Confirmed 2026-07-28 details from the SDK source: no `initialize`; the version is negotiated per request in a `_meta` envelope; `server/discover` is mandatory for servers; the elicitation completion notification is removed (the client retries the original request); out-of-band input uses `input_required` with `inputRequests` and `requestState`; `subscriptions/listen` replaces the HTTP GET stream; sampling, roots and logging are deprecated.
+- The 2.4.0 client defaults to the legacy handshake (`versionNegotiation` must be `auto` or a pin to use 2026-07-28). Many real clients are therefore likely to arrive on 2025-11-25, which supports serving both.
+- Verified: `tests/integration/mcp-spike.test.ts` (pinned 2026-07-28, auto, legacy 2025-11-25 and the default client, each calling a tool), and a temporary route in a production Next.js build called over HTTP on all three (removed afterwards; nothing unauthenticated was committed).
+- The 2.x SDK has no OAuth authorization server. It has only resource-server pieces (bearer verification and RFC 9728 metadata, Express-only) and Zod schemas for OAuth payloads. The 1.x authorization-server router was Express-only too.
+**Decision:** Use the 2.x SDK (`@modelcontextprotocol/server` at runtime, `@modelcontextprotocol/client` for tests only), served by `createMcpHandler` in a Next.js route. Both added after a registry check; `npm audit --omit=dev` is clean, and they share the app's `zod` 4.
+
+## 2026-11-23 — MCP OAuth: a minimal authorization server built into the app (supersedes "using the SDK's auth helpers")
+**Decision (owner, 2026-11-23):** Hand-build a small OAuth 2.1 authorization server in the app, because the SDK no longer provides one: dynamic client registration (RFC 7591, exact redirect URIs, HTTPS or loopback), a consent screen naming the client, authorization code with PKCE S256 only, short-lived signed JWT access tokens with `sub` = user, `act` = client and `aud` = the `/mcp` resource, and authorization server (RFC 8414) and protected resource (RFC 9728) metadata. Payloads are validated with the SDK's OAuth Zod schemas.
+**Why:** It fits Next.js route handlers on Vercel, keeps the `act` claim and consent screen under our control, and has no third-party account.
+**Risk and mitigation:** This is security-sensitive code that we own. Each OAuth control (M1-M3) gets negative tests, the token library is checked on the registry before install, and the design follows the MCP authorization spec.
+**Alternatives:** `oidc-provider` (certified, but expects Node/Koa request objects and needs a storage adapter); an external IdP with MCP support (least code, adds a third party and possible cost).
+
 ## Open
-- Apply migration `0004` to production before merging Phase 3.
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.
 - Optional before Phase 6: GitHub Actions e2e run against the Supabase test project (exercises the pooler).
-- Phase 4 spike: confirm the 2026-07-28 changelog details, SDK support for both revisions, and the MCP SDK inside a Next.js route.
 - Phase 6 capability check: whether Muse can browse or use MCP.
