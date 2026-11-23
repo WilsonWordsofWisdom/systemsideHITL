@@ -27,3 +27,13 @@ describe("database URLs", () => {
     expect(directDatabaseUrl({})).toBeUndefined();
   });
 });
+
+describe("pool options (decision 2026-11-23)", () => {
+  it("closes idle connections before the pooler drops them and never prepares statements", async () => {
+    const { POOL_OPTIONS } = await import("@/lib/db/client");
+    expect(POOL_OPTIONS.prepare).toBe(false);
+    expect(POOL_OPTIONS.idle_timeout).toBeGreaterThan(0);
+    expect(POOL_OPTIONS.idle_timeout).toBeLessThan(60);
+    expect(POOL_OPTIONS.connect_timeout).toBeGreaterThan(0);
+  });
+});

@@ -10,6 +10,7 @@ export async function POST(
   const { id } = await ctx.params;
   return journeyAction(request, {
     action: "attach_document",
+    resourceId: id,
     errorPath: `/apply/${id}/documents`,
     run: async ({ db, userId, body, formData }) => {
       const file = formData?.get("document");

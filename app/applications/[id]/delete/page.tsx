@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HandoffPanel, loadHandoff } from "@/components/handoff";
 import { CsrfField, ErrorNotice, JourneyLayout, NextStep, btn } from "@/components/journey";
 import { loadOwnApplication } from "@/lib/journey/page";
 
@@ -9,7 +10,9 @@ export default async function DeletePage({
 }: PageProps<"/applications/[id]/delete">) {
   const { id } = await params;
   const query = await searchParams;
-  const { app, csrf } = await loadOwnApplication(id);
+  const current = await loadOwnApplication(id);
+  const { app, csrf } = current;
+  const handoff = await loadHandoff(query.ticket, current);
 
   return (
     <JourneyLayout step="applications">
@@ -19,17 +22,21 @@ export default async function DeletePage({
         <strong>{app.title}</strong> will be removed from your applications. This can&apos;t be
         undone.
       </p>
-      <div className="flex flex-wrap gap-3">
-        <form action={`/api/applications/${app.id}/delete`} method="post">
-          <CsrfField csrf={csrf} />
-          <button type="submit" className={btn.danger}>
-            Delete application
-          </button>
-        </form>
-        <Link href={`/applications/${app.id}`} className={btn.text}>
-          Cancel
-        </Link>
-      </div>
+      {handoff ? (
+        <HandoffPanel ticket={handoff} />
+      ) : (
+        <div className="flex flex-wrap gap-3">
+          <form action={`/api/applications/${app.id}/delete`} method="post">
+            <CsrfField csrf={csrf} />
+            <button type="submit" className={btn.danger}>
+              Delete application
+            </button>
+          </form>
+          <Link href={`/applications/${app.id}`} className={btn.text}>
+            Cancel
+          </Link>
+        </div>
+      )}
       <NextStep href="/applications" label="Your applications" />
     </JourneyLayout>
   );

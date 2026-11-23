@@ -6,6 +6,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/application
   const { id } = await ctx.params;
   return journeyAction(request, {
     action: "submit_application",
+    resourceId: id,
     errorPath: `/apply/${id}/declare`,
     run: async ({ db, userId, body }) => {
       if (!["on", "true", "agree"].includes(body.declaration ?? "")) {

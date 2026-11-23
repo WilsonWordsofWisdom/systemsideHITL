@@ -58,8 +58,9 @@ test("enrol a passkey, then sign in with it; other sessions end", async ({ page,
     const [session] = await sql`select signin_method, login_actor_class from sessions
       where revoked_at is null order by created_at desc limit 1`;
     expect(session.signin_method).toBe("passkey");
-    // Playwright sets navigator.webdriver, so the login class is not "human".
-    expect(session.login_actor_class).toBe("unknown");
+    // Playwright sets navigator.webdriver, so the classifier scores the passkey
+    // sign-in as a suspected agent rather than human (architecture 4.7).
+    expect(session.login_actor_class).toBe("suspected_agent");
     const [reset] =
       await sql`select count(*)::int as n from sessions where revoke_reason = 'passkey_reset'`;
     expect(reset.n).toBeGreaterThanOrEqual(1);

@@ -37,7 +37,16 @@ function withTls(url: string | undefined): string | undefined {
   }
 }
 
+// Local Postgres from docker-compose.e2e.yml (decision 2026-11-23). Bound to
+// 127.0.0.1 only and holding throwaway seed data, so this password is not a secret.
+export const LOCAL_E2E_URL = "postgres://hitl_e2e:hitl_e2e_local@127.0.0.1:54329/hitl_e2e";
+
+// E2E_TARGET=local (default) uses the Docker database; E2E_TARGET=supabase uses
+// the separate Supabase test project from .env.test.local.
 export function e2eDatabase() {
+  const target = process.env.E2E_TARGET ?? "local";
+  if (target === "local") return { pooled: LOCAL_E2E_URL, direct: LOCAL_E2E_URL };
+  if (target !== "supabase") throw new Error('E2E_TARGET must be "local" or "supabase"');
   const test = readEnvFile(".env.test.local");
   const pooled = withTls(test.E2E_DATABASE_URL || test.POSTGRES_URL);
   const direct = withTls(test.E2E_DIRECT_DATABASE_URL || test.POSTGRES_URL_NON_POOLING);

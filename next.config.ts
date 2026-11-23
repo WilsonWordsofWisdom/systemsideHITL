@@ -18,6 +18,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // The policy files are read from disk at runtime, so they must ship with every
+  // server function (lib/hitl/policy.ts, lib/hitl/classifier.ts).
+  outputFileTracingIncludes: { "/**": ["./policy/*.yaml"] },
   turbopack: {
     rules: {
       "*.css": {

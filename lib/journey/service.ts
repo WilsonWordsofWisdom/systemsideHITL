@@ -223,14 +223,19 @@ export async function getContact(db: AppDb, userId: string) {
   return row;
 }
 
-export async function updateContact(db: AppDb, userId: string, input: unknown) {
+// Validates a contact change; the guard calls this before asking for approval.
+export function parseContact(input: unknown) {
   const raw = (input ?? {}) as Record<string, unknown>;
   const cleaned = Object.fromEntries(
     Object.entries({ recoveryEmail: raw.recoveryEmail, phone: raw.phone }).filter(
       ([, v]) => typeof v === "string" && v.trim() !== "",
     ),
   );
-  const contact = parseOrThrow(ContactInput, cleaned);
+  return parseOrThrow(ContactInput, cleaned);
+}
+
+export async function updateContact(db: AppDb, userId: string, input: unknown) {
+  const contact = parseContact(input);
   const [row] = await db
     .update(users)
     .set(contact)

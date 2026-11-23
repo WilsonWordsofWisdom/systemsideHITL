@@ -14,6 +14,8 @@ import { passkeys } from "@/lib/db/schema";
 import { getDb } from "@/lib/db/server";
 import { clientIp, ipHash, isSameOrigin } from "@/lib/http";
 import { logEvent } from "@/lib/log";
+import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/hitl/classifier";
+import { clientContextHash, loginClassifierInput } from "@/lib/hitl/inputs";
 import { headerFacts, parseSignals } from "@/lib/signals";
 
 const Body = z.object({
@@ -96,16 +98,28 @@ export async function POST(request: Request) {
   if (previous) await revokeSession(db, sha256Hex(previous), "rotated", now);
 
   const client = parseSignals(parsed.data.signals);
+  // Passkey with UV is human-leaning only when the score is low (architecture 4.7 rule 4).
+  const actor = classifyActor(
+    loginClassifierInput(request, {
+      signinMethod: "passkey",
+      selfDeclared: false,
+      snapshot: client,
+    }),
+    getClassifierConfig(),
+  );
   const { token, session } = await createSession(
     db,
     {
       userId: stored.userId,
       signinMethod: "passkey",
-      // Until Phase 2's classifier: a passkey sign-in with no automation flag is
-      // treated as human-leaning (architecture 4.7 rule 4), otherwise unknown.
-      loginActorClass: client && client.webdriver === false ? "human" : "unknown",
-      loginSignals: { client, headers: headerFacts(request), userAgent },
-      clientCtxHash: sha256Hex(`${userAgent}|${ip}`),
+      loginActorClass: actor.class,
+      loginSignals: {
+        client,
+        headers: headerFacts(request),
+        userAgent,
+        classification: loginClassification(actor),
+      },
+      clientCtxHash: clientContextHash(request, secret),
     },
     now,
   );

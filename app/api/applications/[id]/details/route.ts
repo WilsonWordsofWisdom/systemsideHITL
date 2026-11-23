@@ -6,6 +6,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/application
   const { id } = await ctx.params;
   return journeyAction(request, {
     action: "update_draft",
+    resourceId: id,
     errorPath: `/apply/${id}/details`,
     run: async ({ db, userId, body }) => {
       const application = await updateDraft(db, userId, id, body);

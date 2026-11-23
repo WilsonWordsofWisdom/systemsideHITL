@@ -1,0 +1,22 @@
+# Local Postgres for the end-to-end tests (decision 2026-11-23).
+# Bound to 127.0.0.1 only; data lives in memory and is discarded on `down`.
+# The credentials are throwaway local values for seed data, not secrets.
+# Start: npm run e2e:db:up    Stop: npm run e2e:db:down
+name: hitl-e2e
+services:
+  postgres:
+    # Official Docker Library image, Postgres 17.12, pinned by digest (control B1).
+    image: postgres:17-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73
+    environment:
+      POSTGRES_USER: hitl_e2e
+      POSTGRES_PASSWORD: hitl_e2e_local
+      POSTGRES_DB: hitl_e2e
+    ports:
+      - "127.0.0.1:54329:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hitl_e2e -d hitl_e2e"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
