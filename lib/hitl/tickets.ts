@@ -158,7 +158,14 @@ export interface Redemption {
   clientId?: string | null;
 }
 
-function failureFor(ticket: Ticket, r: Redemption, now: Date): RedeemFailure | null {
+// The checks that don't need the payload: who is redeeming and the ticket's state.
+// The guard runs these before the action's preconditions, so a replayed ticket is
+// reported as "consumed" rather than as the action's own error.
+export function stateFailure(
+  ticket: Ticket,
+  r: Pick<Redemption, "userId" | "sessionId" | "clientId">,
+  now: Date,
+): RedeemFailure | null {
   // Another user's ticket, or another session's, is the same failure (FR19, J07).
   if (ticket.userId !== r.userId) return "wrong_session";
   const boundToSession = ticket.requestingSessionId !== null;
@@ -168,6 +175,12 @@ function failureFor(ticket: Ticket, r: Redemption, now: Date): RedeemFailure | n
   if (ticket.state === "rejected") return "rejected";
   if (ticket.state === "expired" || ticket.expiresAt <= now) return "expired";
   if (ticket.state === "pending") return "not_approved";
+  return null;
+}
+
+function failureFor(ticket: Ticket, r: Redemption, now: Date): RedeemFailure | null {
+  const failure = stateFailure(ticket, r, now);
+  if (failure) return failure;
   if (
     ticket.action !== r.action ||
     ticket.resourceId !== r.resourceId ||

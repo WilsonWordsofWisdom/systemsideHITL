@@ -16,7 +16,7 @@ import { getClassifierConfig, classifyActor } from "@/lib/hitl/classifier";
 import { TICKET_USER_LIMIT, hitlGuard, type GuardInput } from "@/lib/hitl/guard";
 import { getPolicy } from "@/lib/hitl/policy";
 import { approveTicket } from "@/lib/hitl/tickets";
-import { JourneyError, createDraft, updateDraft } from "@/lib/journey/service";
+import { JourneyError, createDraft, submitApplication, updateDraft } from "@/lib/journey/service";
 import { DEMO_USER_ID } from "@/scripts/seed";
 import { createTestDb } from "../helpers/db";
 
@@ -268,6 +268,19 @@ describe("tickets through the guard", () => {
     const replay = await hitlGuard(
       input(s, { resourceId: id, headers: { "x-hitl-ticket": g.ticket.id } }),
     );
+    expect(replay).toMatchObject({ kind: "ticket_invalid", reason: "consumed" });
+  });
+
+  it("a replay after the action ran is reported as consumed, not as the action's error", async () => {
+    const s = await session();
+    const id = await completeDraft();
+    const g = await hitlGuard(input(s, { resourceId: id }));
+    if (g.kind !== "gated") throw new Error("expected gated");
+    await approveTicket(db, g.ticket.id, { method: "passkey", meta: {} });
+    const headers = { "x-hitl-ticket": g.ticket.id };
+    expect((await hitlGuard(input(s, { resourceId: id, headers }))).kind).toBe("ok");
+    await submitApplication(db, DEMO_USER_ID, id);
+    const replay = await hitlGuard(input(s, { resourceId: id, headers }));
     expect(replay).toMatchObject({ kind: "ticket_invalid", reason: "consumed" });
   });
 

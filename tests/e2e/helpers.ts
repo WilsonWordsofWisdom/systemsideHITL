@@ -40,20 +40,41 @@ export async function clearLoginLock(email: string) {
   }
 }
 
-// Stands in for the passkey approval page until Phase 2 slice B builds it.
-export async function approveTicket(ticketId: string) {
-  const sql = testDb();
-  try {
-    const rows = await sql`update hitl_tickets set state = 'approved', approval_method = 'passkey',
-      decided_at = now() where id = ${ticketId} and state = 'pending' returning id`;
-    expect(rows).toHaveLength(1);
-  } finally {
-    await sql.end();
-  }
+// The account holder approves on /approve with the passkey in this browser.
+export async function approveWithPasskey(page: Page, ticketId: string) {
+  await page.goto(`/approve/${ticketId}`);
+  await page.getByRole("button", { name: "Approve with passkey" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toContainText("Approved");
 }
 
 export async function expectSignedIn(page: Page, name: string) {
-  // The test database is a remote Supabase project, so allow for network latency.
+  // Allows for network latency when E2E_TARGET=supabase.
   await expect(page).toHaveURL(/\/applications$/, { timeout: 15_000 });
   await expect(page.getByText(`Signed in as ${name}`).first()).toBeVisible();
+}
+
+// Chrome's virtual WebAuthn authenticator (test mode only, control W8).
+export async function addAuthenticator(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  return { cdp, authenticatorId };
+}
+
+export async function enrolPasskey(page: Page) {
+  await signIn(page, DEMO.email);
+  await expectSignedIn(page, DEMO.name);
+  await page.goto("/account/passkeys");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Passkeys");
+  await page.getByRole("button", { name: "Add a passkey" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toHaveText("Passkey added.");
 }

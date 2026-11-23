@@ -227,6 +227,10 @@ export const webauthnChallenges = pgTable(
     challenge: text("challenge").notNull(),
     userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
     sessionId: text("session_id"),
+    // Ticket approvals only: the challenge is H(ticket_id | payload_hash | nonce),
+    // recomputed from these at verify time (control W2).
+    ticketId: text("ticket_id"),
+    nonce: text("nonce"),
     createdAt: createdAt(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),

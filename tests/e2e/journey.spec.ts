@@ -2,7 +2,15 @@
 // The Playwright browser reports navigator.webdriver, so it signs in as a
 // suspected agent: submit and pay are gated, delete and contact changes denied.
 import { expect, test, type Page } from "@playwright/test";
-import { DEMO, ORIGIN, approveTicket, expectSignedIn, handoffTicket, signIn } from "./helpers";
+import {
+  DEMO,
+  ORIGIN,
+  addAuthenticator,
+  approveWithPasskey,
+  enrolPasskey,
+  handoffTicket,
+  signIn,
+} from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 const SECOND_APP = "00000000-0000-4000-8000-000000000201";
@@ -26,8 +34,10 @@ async function expectNavigable(page: Page) {
 test("complete the permit journey: draft, details, document, review, declare, pay, each gated step approved", async ({
   page,
 }) => {
-  await signIn(page, DEMO.email);
-  await expectSignedIn(page, DEMO.name);
+  // The account holder's passkey lives in this browser's virtual authenticator.
+  await addAuthenticator(page);
+  await enrolPasskey(page);
+  await page.goto("/applications");
   await expectNavigable(page);
   await expect(page.getByRole("link", { name: "Summer Street Fair" })).toBeVisible();
 
@@ -74,9 +84,8 @@ test("complete the permit journey: draft, details, document, review, declare, pa
     (await page.request.get(`/api/applications/${id}`).then((r) => r.json())).application.status,
   ).toBe("draft");
 
-  // Approval page arrives in slice B; until then the test approves in the database.
-  await approveTicket(submitTicket);
   const csrf = await page.locator('meta[name="csrf-token"]').getAttribute("content");
+  await approveWithPasskey(page, submitTicket);
   const retry = await page.request.post(`/api/applications/${id}/submit`, {
     headers: { origin: ORIGIN, "x-csrf-token": csrf!, "x-hitl-ticket": submitTicket },
     data: { declaration: "on" },
@@ -88,7 +97,7 @@ test("complete the permit journey: draft, details, document, review, declare, pa
   await page.getByRole("button", { name: "Pay $50 (mock payment)" }).click();
   await expect(page).toHaveURL(/\/pay\?ticket=hitl_/);
   const payTicket = await handoffTicket(page, "pay_fee");
-  await approveTicket(payTicket);
+  await approveWithPasskey(page, payTicket);
   const paid = await page.request.post(`/api/applications/${id}/pay`, {
     headers: { origin: ORIGIN, "x-csrf-token": csrf!, "x-hitl-ticket": payTicket },
     data: {},

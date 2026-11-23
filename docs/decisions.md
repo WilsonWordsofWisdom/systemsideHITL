@@ -179,7 +179,14 @@ The owner set `APP_ORIGIN=https://hitltest.vercel.app`, `RP_ID=hitltest.vercel.a
 **Alternatives:** WARP split-tunnel exclusion for `*.pooler.supabase.com` or pausing WARP (both need the network admin); CI-only e2e against Supabase.
 **Supersedes:** the 2026-11-22 entry's choice of the Supabase test project as the only e2e database.
 
+## 2026-11-23 — Passkey approval and approval-only sessions (Phase 2 slice B)
+**Decision:** `/approve/[ticketId]` shows the request from the ticket row only (the query string is never read), the domain strip, the requesting actor class and the expiry, with "Approve with passkey" and "Decline". The WebAuthn challenge is `SHA-256(ticketId | payload_hash | nonce)`: the nonce is single use and stored with the ticket ID in `webauthn_challenges` (migration `0003` adds `ticket_id` and `nonce`), and the expected challenge is recomputed from the ticket row at verify time, so an assertion for one ticket can't approve another and a payload change after the challenge was issued fails. Approval needs the ticket's own user, a credential registered to that user, `APP_ORIGIN` and the RP ID, and the user-verified flag; then `pending -> approved` in one conditional update. Failed attempts are logged and limited (10 per user, 30 per IP hash per minute, 5-minute lock). A signed-out visitor, or another account, sees no preview and can sign in with a passkey on the page. That sign-in creates an **approval-only session under its own cookie `dg_approval`**: it never replaces or ends `dg_session`, ends no other session, and is refused by journey routes even if sent as the main cookie. The approver is the approval-only session if present, else the main session; in the agent's own browser the main session is the user's, so the UV passkey assertion is what stops the agent (T4). Redirects after the approval sign-in are built server-side from a validated ticket ID. The guard now reports a supplied ticket's state (unknown, wrong session, pending, used, declined, expired) before the action's preconditions, so a replay after the action ran gets `consumed`, not "Already submitted".
+**Why:** FR20, FR21, controls W1-W4, W11, T4, T7-T9; J02 and J05.
+**Not yet:** "Send to my phone instead" (`/device`, Phase 5); the OTP fallback (W9) stays off and unbuilt.
+**Alternatives:** one cookie with an approval flag on the session (an approval-only sign-in would sign the agent's browser out of the journey).
+
 ## Open
+- Apply migration `0003` to production before merging Phase 2.
 - Confirm the next merge to `main` deploys automatically now the Git link is fixed.
 - Optional before Phase 6: GitHub Actions e2e run against the Supabase test project (exercises the pooler).
 - Phase 4 spike: confirm the 2026-07-28 changelog details, SDK support for both revisions, and the MCP SDK inside a Next.js route.

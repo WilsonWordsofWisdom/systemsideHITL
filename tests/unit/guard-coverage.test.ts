@@ -18,6 +18,11 @@ const EXEMPT: Record<string, string> = {
   "app/api/passkeys/register/verify/route.ts":
     "enrolment: gated by PASSKEY_ENROLMENT and audited (W7)",
   "app/api/signals/route.ts": "classifier input only; changes no journey state",
+  "app/api/hitl/[ticketId]/webauthn/options/route.ts":
+    "approval challenge: the human's side of the gate, checked by approveContext",
+  "app/api/hitl/[ticketId]/approve/route.ts":
+    "approval: needs the ticket's user and a UV passkey assertion (FR20)",
+  "app/api/hitl/[ticketId]/reject/route.ts": "decline: the ticket's user only, by approveContext",
 };
 
 function routeFiles(dir: string): string[] {

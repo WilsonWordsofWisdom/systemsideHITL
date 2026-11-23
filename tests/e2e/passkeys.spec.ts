@@ -1,34 +1,9 @@
 // J12 passkey enrolment and J01 passkey sign-in, using Chrome's virtual
 // WebAuthn authenticator (test mode only, control W8).
-import { expect, test, type Page } from "@playwright/test";
-import { DEMO, expectSignedIn, signIn, testDb } from "./helpers";
+import { expect, test } from "@playwright/test";
+import { DEMO, addAuthenticator, enrolPasskey, expectSignedIn, signIn, testDb } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
-
-async function addAuthenticator(page: Page) {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("WebAuthn.enable");
-  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
-    options: {
-      protocol: "ctap2",
-      transport: "internal",
-      hasResidentKey: true,
-      hasUserVerification: true,
-      isUserVerified: true,
-      automaticPresenceSimulation: true,
-    },
-  });
-  return { cdp, authenticatorId };
-}
-
-async function enrolPasskey(page: Page) {
-  await signIn(page, DEMO.email);
-  await expectSignedIn(page, DEMO.name);
-  await page.goto("/account/passkeys");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Passkeys");
-  await page.getByRole("button", { name: "Add a passkey" }).click();
-  await expect(page.getByRole("main").getByRole("status")).toHaveText("Passkey added.");
-}
 
 test("enrol a passkey, then sign in with it; other sessions end", async ({ page, browser }) => {
   // A second browser signed in with the password: its session must end when the

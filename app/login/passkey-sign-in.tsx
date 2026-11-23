@@ -10,8 +10,15 @@ declare global {
 }
 
 // "Sign in with a passkey" (FR6). Works only with JavaScript; the password form
-// above does not depend on it.
-export function PasskeySignIn() {
+// above does not depend on it. With `ticketId` it signs in for an approval-only
+// session on /approve (W11); the server decides where to go next.
+export function PasskeySignIn({
+  ticketId,
+  label = "Sign in with a passkey",
+}: {
+  ticketId?: string;
+  label?: string;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,13 +37,18 @@ export function PasskeySignIn() {
           challengeId,
           response,
           signals: JSON.stringify(window.__dgSignals?.() ?? {}),
+          ...(ticketId ? { mode: "approval", ticketId } : {}),
         }),
       });
       if (!finish.ok) throw new Error();
       const { redirect } = await finish.json();
       window.location.assign(redirect);
     } catch {
-      setError("Passkey sign-in didn't work. Try again, or sign in with your password.");
+      setError(
+        ticketId
+          ? "Passkey sign-in didn't work. Try again on the device that holds your passkey."
+          : "Passkey sign-in didn't work. Try again, or sign in with your password.",
+      );
       setBusy(false);
     }
   }
@@ -49,7 +61,7 @@ export function PasskeySignIn() {
         disabled={busy}
         className="h-10 w-full rounded-full border border-outline text-sm font-medium text-primary disabled:opacity-60"
       >
-        Sign in with a passkey
+        {label}
       </button>
       {error && (
         <p

@@ -14,7 +14,14 @@ export type ChallengePurpose = "register" | "login" | "approve";
 
 export async function issueChallenge(
   db: AppDb,
-  input: { purpose: ChallengePurpose; challenge: string; userId?: string; sessionId?: string },
+  input: {
+    purpose: ChallengePurpose;
+    challenge: string;
+    userId?: string;
+    sessionId?: string;
+    ticketId?: string;
+    nonce?: string;
+  },
   now = new Date(),
 ) {
   // Housekeeping: drop challenges that expired over an hour ago.
@@ -28,6 +35,8 @@ export async function issueChallenge(
     challenge: input.challenge,
     userId: input.userId ?? null,
     sessionId: input.sessionId ?? null,
+    ticketId: input.ticketId ?? null,
+    nonce: input.nonce ?? null,
     createdAt: now,
     expiresAt: new Date(now.getTime() + CHALLENGE_TTL_MS),
   });

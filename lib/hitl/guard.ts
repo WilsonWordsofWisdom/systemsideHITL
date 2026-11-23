@@ -16,7 +16,14 @@ import { payloadHash } from "./hash";
 import { requestClassifierInput } from "./inputs";
 import { getPolicy, type Decision, type Policy } from "./policy";
 import { buildSnapshot } from "./snapshot";
-import { redeemTicket, requestTicket, type RedeemFailure, type Ticket } from "./tickets";
+import {
+  getTicket,
+  redeemTicket,
+  requestTicket,
+  stateFailure,
+  type RedeemFailure,
+  type Ticket,
+} from "./tickets";
 
 // Ticket creation limits (control T9, FR23).
 export const TICKET_USER_LIMIT: LimitRule = { max: 20, windowSec: 60, lockSec: 60 };
@@ -163,8 +170,22 @@ export async function hitlGuard(
     return { kind: "denied", actor, reason: "policy" };
   }
 
-  // Gate. Preconditions and the resource snapshot come first, so no ticket is
-  // created for an action that could not run (throws JourneyError).
+  // Gate. A supplied ticket that can't be redeemed whatever the payload (unknown,
+  // another session's, pending, used, declined, expired) is reported first.
+  const ticketId = ticketIdFrom(request, input.body);
+  if (ticketId) {
+    const existing = await getTicket(db, ticketId, now);
+    const early = existing
+      ? stateFailure(existing, { userId: input.userId, sessionId: session.id }, now)
+      : "not_found";
+    if (early) {
+      await log({ outcome: "blocked", reason: `ticket:${early}`, ticketId });
+      return { kind: "ticket_invalid", actor, ticketId, reason: early };
+    }
+  }
+
+  // Preconditions and the resource snapshot come next, so no ticket is created
+  // for an action that could not run (throws JourneyError).
   let built: Awaited<ReturnType<typeof buildSnapshot>>;
   try {
     built = await buildSnapshot(db, input.action, input.userId, input.resourceId, input.body);
@@ -183,7 +204,6 @@ export async function hitlGuard(
     snapshot,
   });
 
-  const ticketId = ticketIdFrom(request, input.body);
   if (ticketId) {
     const redeemed = await redeemTicket(
       db,

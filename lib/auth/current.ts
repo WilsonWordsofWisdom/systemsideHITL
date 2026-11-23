@@ -22,8 +22,15 @@ export function sessionCookieOptions(appOrigin: string) {
 
 // The signed-in session and user for this request, or null. Cached per request
 // so the layout and page share one database read.
-export const getCurrentSession = cache(async () => {
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+export const getCurrentSession = cache(async () =>
+  sessionFor((await cookies()).get(SESSION_COOKIE)?.value),
+);
+
+// Approval-only sessions use their own cookie, so signing in on /approve never
+// replaces or ends the main session in the same browser (control W11, T9).
+export const APPROVAL_COOKIE = "dg_approval";
+
+async function sessionFor(token: string | undefined) {
   if (!token) return null;
   const db = getDb();
   const session = await validateSession(db, token);
@@ -35,6 +42,16 @@ export const getCurrentSession = cache(async () => {
     .limit(1);
   if (!user) return null;
   return { session, user, csrf: csrfTokenFor(session.id, getSessionSecret()) };
+}
+
+// Who is approving: an approval-only session if one exists, else the main
+// session. The approval itself still needs a UV passkey assertion (FR20).
+export const getApproverSession = cache(async () => {
+  const jar = await cookies();
+  const approval = await sessionFor(jar.get(APPROVAL_COOKIE)?.value);
+  if (approval?.session.approvalOnly) return { ...approval, kind: "approval" as const };
+  const main = await getCurrentSession();
+  return main ? { ...main, kind: "main" as const } : null;
 });
 
 // For journey pages: approval-only sessions cannot act on the journey (W11).
