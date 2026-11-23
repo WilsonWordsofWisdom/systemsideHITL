@@ -2,10 +2,19 @@
 // Every mutating tool calls the same hitlGuard as the web routes, with the OAuth
 // client as tier A evidence, so the caller is always at least declared_agent.
 // Descriptions say what each tool does and its risk, in neutral declarative words.
-import { McpServer } from "@modelcontextprotocol/server";
+import {
+  McpServer,
+  UrlElicitationRequiredError,
+  createRequestStateCodec,
+  inputRequired,
+  inputResponse,
+  type ServerContext,
+} from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { hmacBase64Url } from "../auth/crypto";
 import type { SessionRow } from "../auth/session";
 import type { AppDb } from "../db/types";
+import type { McpGateMode } from "../flags";
 import { hitlGuard } from "../hitl/guard";
 import { GATED_MESSAGE, continueUrl, deniedBody, ticketInvalidBody } from "../hitl/response";
 import { getTicket, type Ticket } from "../hitl/tickets";
@@ -23,6 +32,7 @@ import {
   updateDraft,
 } from "../journey/service";
 import { logEvent } from "../log";
+import { supportsUrlElicitation, type McpClientInfo } from "./request";
 
 export interface McpCaller {
   db: AppDb;
@@ -34,7 +44,19 @@ export interface McpCaller {
   secret: string;
   mode: "enforce" | "observe";
   ttlSeconds: number;
+  // The revision and capabilities the client declared (control M6).
+  client: McpClientInfo;
+  gateMode: McpGateMode;
+  // Step-scoped tools/list (FR33): the tools to list, or null for all of them.
+  visibleTools?: ReadonlySet<string> | null;
 }
+
+// requestState on revision 2026-07-28 names the ticket being waited on. It comes
+// back from the client, so it is sealed with an HMAC and bound to the MCP session.
+interface ApprovalState {
+  ticket: string;
+}
+const APPROVAL_KEY = "approval";
 
 const appId = z.string().describe("The application ID.");
 const ticketArg = z
@@ -142,14 +164,41 @@ function toBody(args: Record<string, unknown>, ticket?: string) {
   return body;
 }
 
+type StateCodec = ReturnType<typeof createRequestStateCodec<ApprovalState>>;
+
+// MCP_GATE_MODE=elicitation for a client that declared URL elicitation (FR32,
+// control M7). 2026-07-28: an input_required result with a URL request and the
+// sealed ticket in requestState; the client retries with it once the user is done.
+// 2025-11-25: error -32042 with elicitationId = ticket ID; the client retries with
+// hitl_ticket_id. Served statelessly, there is no stream for a completion notification.
+async function askForApproval(c: McpCaller, ctx: ServerContext, codec: StateCodec, t: Ticket) {
+  const url = continueUrl(c.origin, t.id);
+  if (c.client.era === "modern") {
+    return inputRequired({
+      inputRequests: { [APPROVAL_KEY]: inputRequired.elicitUrl({ message: GATED_MESSAGE, url }) },
+      requestState: await codec.mint({ ticket: t.id }, ctx),
+    });
+  }
+  throw new UrlElicitationRequiredError(
+    [{ mode: "url", elicitationId: t.id, url, message: GATED_MESSAGE }],
+    `Approval by the account holder is required. The elicitationId is the approval ticket ID (hitl_ticket_id).`,
+  );
+}
+
 async function guarded(
   c: McpCaller,
+  ctx: ServerContext,
+  codec: StateCodec,
   tool: ToolName,
   resourceId: string | null,
   body: Record<string, string>,
   run: () => Promise<Record<string, unknown>>,
 ) {
   const action = MCP_TOOLS[tool].action!;
+  const elicit = c.gateMode === "elicitation" && supportsUrlElicitation(c.client);
+  // A 2026-07-28 retry carries the ticket in the verified requestState.
+  const waitingOn = ctx.mcpReq.requestState<ApprovalState>()?.ticket;
+  if (!body.hitl_ticket && waitingOn) body = { ...body, hitl_ticket: waitingOn };
   let g;
   try {
     g = await hitlGuard({
@@ -164,13 +213,27 @@ async function guarded(
       secret: c.secret,
       mode: c.mode,
       ttlSeconds: c.ttlSeconds,
-      mcp: { clientId: c.clientId, tool },
+      mcp: { clientId: c.clientId, tool, client: c.client },
     });
   } catch (err) {
     return journeyFailure(err);
   }
-  if (g.kind === "gated") return result(gatedToolBody(g.ticket, c.origin));
+  if (g.kind === "gated") {
+    return elicit
+      ? askForApproval(c, ctx, codec, g.ticket)
+      : result(gatedToolBody(g.ticket, c.origin));
+  }
   if (g.kind === "denied") return result(deniedBody(action, g.reason), true);
+  if (g.kind === "ticket_invalid" && g.reason === "not_approved" && elicit) {
+    // Not approved yet: ask again, unless the client said the user declined or
+    // cancelled the link, which falls back to the tool_result response.
+    const t = await getTicket(c.db, g.ticketId);
+    const answer = inputResponse(ctx.mcpReq.inputResponses, APPROVAL_KEY);
+    if (t && answer.kind === "elicit" && answer.action !== "accept") {
+      return result(gatedToolBody(t, c.origin));
+    }
+    if (t) return askForApproval(c, ctx, codec, t);
+  }
   if (g.kind === "ticket_invalid") {
     return result(ticketInvalidBody(action, g.ticketId, g.reason), true);
   }
@@ -184,44 +247,80 @@ async function guarded(
   }
 }
 
+// Writes the request_log row for an MCP request the guard doesn't see: read-only
+// tools, and protocol requests such as initialize and tools/list (control M6).
+export async function logMcpRequest(c: McpCaller, pathOrTool: string) {
+  await logEvent(c.db, {
+    route: "mcp",
+    method: "POST",
+    pathOrTool,
+    userId: c.userId,
+    sessionId: c.session.id,
+    runId: c.session.runId,
+    actorClass: "declared_agent",
+    actorSignals: {
+      tier: "A",
+      facts: { protocolAgent: { source: "mcp_token", agent: c.clientId } },
+      mcp: c.client,
+    },
+    policyDecision: "allow",
+    outcome: "executed",
+    userAgent: (c.request.headers.get("user-agent") ?? "").slice(0, 300),
+  });
+}
+
 // Read-only tools aren't gated, but are logged so the console shows the run.
 async function logged(c: McpCaller, tool: ToolName, run: () => Promise<Record<string, unknown>>) {
   try {
     const out = await run();
-    await logEvent(c.db, {
-      route: "mcp",
-      method: "POST",
-      pathOrTool: tool,
-      userId: c.userId,
-      sessionId: c.session.id,
-      runId: c.session.runId,
-      actorClass: "declared_agent",
-      actorSignals: {
-        tier: "A",
-        facts: { protocolAgent: { source: "mcp_token", agent: c.clientId } },
-      },
-      policyDecision: "allow",
-      outcome: "executed",
-      userAgent: (c.request.headers.get("user-agent") ?? "").slice(0, 300),
-    });
+    await logMcpRequest(c, tool);
     return result(out);
   } catch (err) {
     return journeyFailure(err);
   }
 }
 
+// The tools step-scoped tools/list shows (FR33): read-only tools, starting a draft,
+// the contact change, and each application's next actions from its journey state.
+export async function stepScopedTools(db: AppDb, userId: string): Promise<Set<string>> {
+  const names = new Set<string>(["create_draft", "update_contact"]);
+  for (const [name, def] of Object.entries(MCP_TOOLS)) if (!def.action) names.add(name);
+  for (const app of await listApplications(db, userId)) {
+    for (const action of journeyState(app).nextActions) names.add(action);
+  }
+  return names;
+}
+
 export function buildMcpServer(c: McpCaller) {
-  const server = new McpServer({ name: "demogov-permits", version: "0.1.0" });
+  const codec = createRequestStateCodec<ApprovalState>({
+    key: hmacBase64Url(c.secret, "mcp-request-state-v1"),
+    ttlSeconds: c.ttlSeconds,
+    bind: () => c.session.id,
+  });
+  const server = new McpServer(
+    { name: "demogov-permits", version: "0.1.0" },
+    { requestState: { verify: codec.verify } },
+  );
   const tool = <S extends z.ZodRawShape>(
     name: ToolName,
     shape: S,
-    handler: (args: z.infer<z.ZodObject<S>>) => Promise<ReturnType<typeof result>>,
-  ) =>
-    server.registerTool(
+    handler: (args: z.infer<z.ZodObject<S>>, ctx: ServerContext) => Promise<unknown>,
+  ) => {
+    const registered = server.registerTool(
       name,
       { description: MCP_TOOLS[name].description, inputSchema: z.object(shape) },
       handler as never,
     );
+    // Hidden from the list only for this tools/list request; calls always reach the guard.
+    if (c.visibleTools && !c.visibleTools.has(name)) registered.disable();
+  };
+  const gate = (
+    ctx: ServerContext,
+    name: ToolName,
+    resourceId: string | null,
+    body: Record<string, string>,
+    run: () => Promise<Record<string, unknown>>,
+  ) => guarded(c, ctx, codec, name, resourceId, body, run);
 
   tool("list_applications", { query: z.string().max(100).optional() }, ({ query }) =>
     logged(c, "list_applications", async () => ({
@@ -253,8 +352,8 @@ export function buildMcpServer(c: McpCaller) {
     }),
   );
 
-  tool("create_draft", { title: z.string().max(120).optional() }, (args) =>
-    guarded(c, "create_draft", null, toBody(args), async () => ({
+  tool("create_draft", { title: z.string().max(120).optional() }, (args, ctx) =>
+    gate(ctx, "create_draft", null, toBody(args), async () => ({
       application: await createDraft(c.db, c.userId, args.title),
     })),
   );
@@ -267,8 +366,8 @@ export function buildMcpServer(c: McpCaller) {
       attendance: z.union([z.number(), z.string()]).optional(),
       location: z.string().max(200).optional(),
     },
-    ({ application_id, ...fields }) =>
-      guarded(c, "update_draft", application_id, toBody(fields), async () => ({
+    ({ application_id, ...fields }, ctx) =>
+      gate(ctx, "update_draft", application_id, toBody(fields), async () => ({
         application: await updateDraft(c.db, c.userId, application_id, fields),
       })),
   );
@@ -280,8 +379,8 @@ export function buildMcpServer(c: McpCaller) {
       type: z.string().max(100),
       size: z.number().int(),
     },
-    ({ application_id, ...meta }) =>
-      guarded(c, "attach_document", application_id, toBody(meta), async () => ({
+    ({ application_id, ...meta }, ctx) =>
+      gate(ctx, "attach_document", application_id, toBody(meta), async () => ({
         application: await attachDocument(c.db, c.userId, application_id, meta),
       })),
   );
@@ -294,9 +393,9 @@ export function buildMcpServer(c: McpCaller) {
         .describe("True confirms the information given is true and complete."),
       hitl_ticket_id: ticketArg,
     },
-    ({ application_id, declaration, hitl_ticket_id }) =>
-      guarded(
-        c,
+    ({ application_id, declaration, hitl_ticket_id }, ctx) =>
+      gate(
+        ctx,
         "submit_application",
         application_id,
         toBody({ declaration: declaration ? "true" : "false" }, hitl_ticket_id),
@@ -306,8 +405,8 @@ export function buildMcpServer(c: McpCaller) {
   tool(
     "pay_fee",
     { application_id: appId, hitl_ticket_id: ticketArg },
-    ({ application_id, hitl_ticket_id }) =>
-      guarded(c, "pay_fee", application_id, toBody({}, hitl_ticket_id), async () => ({
+    ({ application_id, hitl_ticket_id }, ctx) =>
+      gate(ctx, "pay_fee", application_id, toBody({}, hitl_ticket_id), async () => ({
         application: await payFee(c.db, c.userId, application_id),
       })),
   );
@@ -318,9 +417,9 @@ export function buildMcpServer(c: McpCaller) {
       phone: z.string().max(20).optional(),
       hitl_ticket_id: ticketArg,
     },
-    ({ recovery_email, phone, hitl_ticket_id }) => {
+    ({ recovery_email, phone, hitl_ticket_id }, ctx) => {
       const contact = { recoveryEmail: recovery_email, phone };
-      return guarded(c, "update_contact", null, toBody(contact, hitl_ticket_id), async () => ({
+      return gate(ctx, "update_contact", null, toBody(contact, hitl_ticket_id), async () => ({
         contact: await updateContact(c.db, c.userId, contact),
       }));
     },
@@ -328,8 +427,8 @@ export function buildMcpServer(c: McpCaller) {
   tool(
     "delete_application",
     { application_id: appId, hitl_ticket_id: ticketArg },
-    ({ application_id, hitl_ticket_id }) =>
-      guarded(c, "delete_application", application_id, toBody({}, hitl_ticket_id), async () => {
+    ({ application_id, hitl_ticket_id }, ctx) =>
+      gate(ctx, "delete_application", application_id, toBody({}, hitl_ticket_id), async () => {
         await deleteApplication(c.db, c.userId, application_id);
         return { deleted: application_id };
       }),

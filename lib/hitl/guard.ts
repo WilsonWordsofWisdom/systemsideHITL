@@ -6,6 +6,7 @@ import type { AppDb } from "../db/types";
 import { runIdFromRequest } from "../console/run";
 import { clientIp, ipHash } from "../http";
 import { logEvent } from "../log";
+import type { McpClientInfo } from "../mcp/request";
 import { lockedUntil, recordFailure, type LimitRule } from "../ratelimit";
 import {
   classifyActor,
@@ -54,8 +55,9 @@ export interface GuardInput {
   userId: string;
   session: SessionRow;
   // MCP: the OAuth client acting for the user. It is tier A evidence (the token
-  // names the client), binds tickets to the client, and the tool name is logged.
-  mcp?: { clientId: string; tool: string };
+  // names the client), binds tickets to the client, and the tool name and the
+  // client's declared revision and capabilities are logged (control M6).
+  mcp?: { clientId: string; tool: string; client?: McpClientInfo };
   action: string;
   resourceId: string | null;
   body: Record<string, string>;
@@ -186,6 +188,7 @@ export async function hitlGuard(
         riskChange: risk,
         action: input.action,
         mode: input.mode,
+        ...(input.mcp?.client ? { mcp: input.mcp.client } : {}),
       },
       policyDecision: decision,
       ticketId: row.ticketId ?? null,

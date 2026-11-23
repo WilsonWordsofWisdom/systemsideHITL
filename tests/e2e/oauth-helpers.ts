@@ -9,8 +9,8 @@ export const CALLBACK = "http://127.0.0.1:9/callback";
 export const verifier = randomBytes(32).toString("base64url");
 export const challenge = createHash("sha256").update(verifier).digest("base64url");
 
-export async function register(page: Page, name = "Test MCP agent") {
-  const res = await page.request.post("/api/oauth/register", {
+export async function register(page: Page, name = "Test MCP agent", origin = ORIGIN) {
+  const res = await page.request.post(`${origin}/api/oauth/register`, {
     data: { client_name: name, redirect_uris: [CALLBACK] },
   });
   expect(res.status()).toBe(201);
@@ -48,22 +48,23 @@ export async function signInHere(page: Page) {
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
 }
 
-// The whole flow: a registered client and a bearer token for /mcp as the demo user.
-export async function mcpToken(page: Page, name = "Test MCP agent") {
-  const clientId = await register(page, name);
+// The whole flow: a registered client and a bearer token for /mcp as the demo user,
+// from the main server or a variant server (each token is bound to its origin).
+export async function mcpToken(page: Page, name = "Test MCP agent", origin = ORIGIN) {
+  const clientId = await register(page, name, origin);
   const callback = await captureCallback(page);
-  await page.goto(authorizeUrl(clientId));
+  await page.goto(`${origin}${authorizeUrl(clientId, { resource: `${origin}/mcp` })}`);
   if (page.url().includes("/login")) await signInHere(page);
   await page.getByRole("button", { name: "Allow access" }).click();
   await expect.poll(() => callback()?.searchParams.get("code")).toBeTruthy();
-  const res = await page.request.post("/api/oauth/token", {
+  const res = await page.request.post(`${origin}/api/oauth/token`, {
     form: {
       grant_type: "authorization_code",
       code: callback()!.searchParams.get("code")!,
       client_id: clientId,
       redirect_uri: CALLBACK,
       code_verifier: verifier,
-      resource: `${ORIGIN}/mcp`,
+      resource: `${origin}/mcp`,
     },
   });
   expect(res.status()).toBe(200);

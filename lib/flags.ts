@@ -16,6 +16,16 @@ export function handoffMode(env: Env = process.env): HandoffMode {
 // Resubmit automatically once approved, instead of offering Continue (FR27).
 export const autoresumeOn = (env: Env = process.env) => env.HITL_AUTORESUME === "on";
 
+// How a gated MCP tool call asks for approval (FR32): a normal tool result (the
+// default), or URL elicitation for clients that declare it.
+export type McpGateMode = "tool_result" | "elicitation";
+export const mcpGateMode = (env: Env = process.env): McpGateMode =>
+  env.MCP_GATE_MODE === "elicitation" ? "elicitation" : "tool_result";
+
+// tools/list shows only the tools the journey state allows next (FR33). A
+// convenience only: hidden tools stay callable and the guard still decides (M5).
+export const mcpStepScopedTools = (env: Env = process.env) => env.MCP_STEP_SCOPED_TOOLS === "on";
+
 // HTTP status of a gated response (FR24): 403 by default; 401 or 202 as test variants.
 export function gateStatus(env: Env = process.env): 401 | 403 | 202 {
   const v = env.HITL_GATE_STATUS;

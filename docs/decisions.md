@@ -260,7 +260,19 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 - **Descriptions:** neutral, each stating its risk level, and checked by the content lint.
 
 **Why:** FR19, FR29, FR31, FR32 (`tool_result`), controls M1, M4, C4, P1.
-**Next (slice C):** `MCP_GATE_MODE=elicitation` (`input_required` on 2026-07-28, URL elicitation on 2025-11-25), client capability logging, `MCP_STEP_SCOPED_TOOLS`.
+**Next:** slice C (decision below).
+
+## 2026-11-23 — MCP gate modes, client capabilities and step-scoped tools (Phase 4 slice C)
+**Decision:**
+- **`MCP_GATE_MODE=elicitation`** applies only to clients that declared URL elicitation (`capabilities.elicitation.url`); every other client gets the `tool_result` response, which stays the default.
+  - **2026-07-28:** a gated call returns `input_required` with one URL request (the approval page) and a `requestState` naming the ticket. The state is sealed with the SDK's HMAC codec (a key derived from `SESSION_SECRET`), bound to the MCP session, and lives as long as a ticket. The client retries with it; a retry while the ticket is still pending asks again, a `decline` or `cancel` answer falls back to the `tool_result` response, and a modified state or one from another session is refused (`-32602`) before the tool runs.
+  - **2025-11-25:** a gated call fails with `-32042`, mode `url`, `elicitationId` = ticket ID. The client retries with `hitl_ticket_id`; a retry while pending gets `-32042` again.
+  - **No completion notification on 2025-11-25** (changes J08). Legacy requests are served statelessly (`legacy: "stateless"`, one server per request on Vercel), so there is no stream to send `notifications/elicitation/complete` on. The client retries after the user finishes, as on 2026-07-28. Sessionful legacy serving would need sticky instances or a shared event store.
+- **Client capabilities (M6):** the route reads each JSON-RPC request once. On 2026-07-28 the revision and capabilities come from the request's `_meta` envelope; on 2025-11-25 they come from `initialize`, and later stateless requests read them back from the session's latest `initialize` row in `request_log`. Each request is logged with them in `actor_signals.mcp`: tool calls by the tools and the guard, other requests (`initialize`, `server/discover`, `tools/list`) by the route. The console's signals column shows "MCP <revision> · URL elicitation" or "no URL elicitation". No migration.
+- **`MCP_STEP_SCOPED_TOOLS=on`:** a `tools/list` request lists the read-only tools, `create_draft`, `update_contact`, and each application's next actions from its journey state. Only the list changes: a tool call always registers every tool, so a hidden tool still reaches the guard and is logged (M5).
+
+**Why:** FR32, FR33, FR34, controls M5-M7, J08.
+**Alternatives:** sessionful legacy serving to send the completion notification (needs shared state across serverless instances); hiding tools by disabling them on calls too (the guard would never see premature attempts, which J08's manual scenario records).
 
 ## Open
 - Apply migration `0005` to production before merging Phase 4.

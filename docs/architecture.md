@@ -360,8 +360,8 @@ Every security control and check implemented on the system side. Nothing is buil
 | M3 | Consent screen shows the client name; token carries `sub` and `act` | OAuth AS | Integration test decodes token (Phase 4) |
 | M4 | Every MCP tool calls the same guard; the class on `/mcp` is always at least `declared_agent` | `app/mcp` | SDK-client integration test (Phase 4) |
 | M5 | `tools/list` is computed from DB state; scoping is a convenience, never the enforcement | `app/mcp` | Test: calling a hidden tool is still gated/denied (Phase 4) |
-| M6 | Client capabilities logged on `initialize` (2025-11-25) or on each request (2026-07-28, which has no `initialize`) | `app/mcp`, `log.ts` | Console shows capabilities for both revisions (Phase 4) |
-| M7 | Revision 2026-07-28 is primary; 2025-11-25 is supported by version negotiation; `tool_result` is the fallback. Elicitation correlation uses `elicitationId` + completion notification (2025-11-25) or `requestState` (2026-07-28) | `app/mcp` | SDK-client integration test per revision (Phase 4, after the spike) |
+| M6 | Client capabilities logged on `initialize` (2025-11-25) or on each request (2026-07-28, which has no `initialize`) | `app/mcp`, `lib/mcp/request.ts` | Console shows capabilities for both revisions (Phase 4) |
+| M7 | Revision 2026-07-28 is primary; 2025-11-25 is supported by version negotiation; `tool_result` is the fallback. Elicitation correlation uses `elicitationId` = ticket ID with a retry carrying `hitl_ticket_id` (2025-11-25; served statelessly, so no completion notification) or an HMAC-sealed, session-bound `requestState` (2026-07-28) | `app/mcp`, `lib/mcp` | SDK-client integration test per revision (Phase 4, after the spike) |
 
 ### 7.6 Web session and transport
 

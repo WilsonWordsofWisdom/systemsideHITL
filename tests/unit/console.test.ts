@@ -100,6 +100,23 @@ describe("table summary and export (L4)", () => {
       "no page view, ctx changed, agent UA · score 65 · risk → handover_suspected",
     );
     expect(signalsSummary({ facts: { classifierError: true } })).toBe("classifier error");
+    // MCP rows show the client's revision and URL elicitation support (M6).
+    expect(
+      signalsSummary({
+        tier: "A",
+        mcp: {
+          era: "modern",
+          protocolVersion: "2026-07-28",
+          capabilities: { elicitation: { url: {} } },
+        },
+      }),
+    ).toBe("protocol identity · MCP 2026-07-28 · URL elicitation");
+    expect(
+      signalsSummary({
+        tier: "A",
+        mcp: { era: "legacy", protocolVersion: null, capabilities: {} },
+      }),
+    ).toBe("protocol identity · MCP legacy · no URL elicitation");
   });
 
   it("exports hashed IPs and quotes every CSV cell, neutralising formulas", () => {
