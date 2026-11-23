@@ -235,7 +235,22 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 **Risk and mitigation:** This is security-sensitive code that we own. Each OAuth control (M1-M3) gets negative tests, the token library is checked on the registry before install, and the design follows the MCP authorization spec.
 **Alternatives:** `oidc-provider` (certified, but expects Node/Koa request objects and needs a storage adapter); an external IdP with MCP support (least code, adds a third party and possible cost).
 
+## 2026-11-23 — MCP OAuth server details (Phase 4 slice A)
+**Decision:**
+- **Metadata:** RFC 8414 at `/.well-known/oauth-authorization-server`; RFC 9728 at `/.well-known/oauth-protected-resource/mcp` and at the root path.
+- **Registration:** `POST /api/oauth/register` (RFC 7591) accepts public clients only (`token_endpoint_auth_method: none`, `authorization_code` only) with 1-5 redirect URIs. Each URI must be HTTPS, or HTTP on `localhost`, `127.0.0.1` or `[::1]`, with no fragment or credentials. It is validated with the SDK's `OAuthClientMetadataSchema`, and the client name is cleaned and shortened for the consent screen. Limited to 30 registrations per IP hash per hour.
+- **Authorization:** `/oauth/authorize` shows an unknown client or unregistered redirect URI on our own page and never redirects (no open redirect). Other errors go back to the registered URI with `state` and `iss` (RFC 9207). It requires `response_type=code`, PKCE S256, `resource` equal to `<origin>/mcp` when sent, and the scope `mcp`.
+- **Sign-in and consent:** a signed-out user goes to `/login?next=…`, where only `/oauth/authorize?…` is accepted as a return path (password and passkey sign-in). The consent page names the client and the account, and says that every gated action still needs the account holder's passkey.
+- **Returning to the client:** the consent decision returns through a small page with its own strict CSP and `no-referrer`. A redirect after a form post would be blocked by our `form-action 'self'` policy, and this way the code stays out of our own URLs.
+- **Codes:** a code is stored as a SHA-256 and lasts 5 minutes. It is redeemed in one conditional update, bound to client, redirect URI, user, PKCE challenge and resource. A replayed code revokes the token issued from it.
+- **Tokens:** access tokens are `at+jwt` JWTs signed HS256 with a key derived from `SESSION_SECRET` (the issuer and the resource are this same app, so there is no published key set and no key table). They carry `iss`, `sub` = user, `aud` = `<origin>/mcp`, `act.sub` = `client_id` = the client, `scope`, `jti` and a 1-hour `exp`. Each one is recorded in `oauth_tokens`, so verification also checks that it was issued here and isn't revoked. There are no refresh tokens; a client signs in again after an hour.
+- **Other:** metadata, registration and token endpoints send `Access-Control-Allow-Origin: *` (they use no cookies). "Reset demo data" also clears codes and tokens but keeps registered clients. New tables `oauth_codes` and `oauth_tokens` (migration `0005`). Dependencies: `jose` 6.2.16 (panva, MIT, no dependencies; the newest release was under two weeks old, so the previous one was pinned) and `@modelcontextprotocol/core` 2.4.0 as a direct dependency.
+
+**Why:** FR30, controls M1-M3, the MCP authorization spec.
+**Not yet:** OAuth Client ID Metadata Documents (URL client IDs) and refresh tokens; add if a live client needs them.
+
 ## Open
+- Apply migration `0005` to production before merging Phase 4.
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.
 - Optional before Phase 6: GitHub Actions e2e run against the Supabase test project (exercises the pooler).
 - Phase 6 capability check: whether Muse can browse or use MCP.

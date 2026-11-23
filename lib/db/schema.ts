@@ -253,6 +253,47 @@ export const runs = pgTable("runs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }).enableRLS();
 
+// OAuth authorization codes for MCP clients (FR30, control M1). Only the SHA-256
+// of the code is stored; a code is single use and short-lived, bound to the
+// client, redirect URI, user, PKCE challenge and resource.
+export const oauthCodes = pgTable(
+  "oauth_codes",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    scope: text("scope").notNull(),
+    resource: text("resource").notNull(),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [index("oauth_codes_expiry_idx").on(t.expiresAt)],
+).enableRLS();
+
+// Access tokens issued to MCP clients, by JWT ID, so one can be revoked (for
+// example when its authorization code is replayed).
+export const oauthTokens = pgTable(
+  "oauth_tokens",
+  {
+    jti: text("jti").primaryKey(),
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeId: text("code_id"),
+    scope: text("scope").notNull(),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("oauth_tokens_code_idx").on(t.codeId)],
+).enableRLS();
+
 export const mcpClients = pgTable("mcp_clients", {
   id: uuid("id").primaryKey().defaultRandom(),
   clientId: text("client_id").notNull().unique(),

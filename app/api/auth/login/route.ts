@@ -20,6 +20,7 @@ import {
 import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/hitl/classifier";
 import { clientContextHash, loginClassifierInput, recordLoginRisk } from "@/lib/hitl/inputs";
 import { runIdFromRequest } from "@/lib/console/run";
+import { safeNextPath } from "@/lib/oauth/authorize";
 import { headerFacts, parseSignals } from "@/lib/signals";
 
 const LoginForm = z.object({
@@ -27,6 +28,7 @@ const LoginForm = z.object({
   password: z.string().min(1).max(200),
   self_declare: z.string().optional(),
   signals: z.string().max(4000).optional(),
+  next: z.string().max(4096).optional(),
 });
 
 type ErrorCode = "invalid" | "locked" | "bad_request";
@@ -114,7 +116,10 @@ export async function POST(request: Request) {
   await recordLoginRisk(db, session.id, actor, now);
 
   const response = html
-    ? NextResponse.redirect(new URL("/applications", cfg.appOrigin), 303)
+    ? NextResponse.redirect(
+        new URL(safeNextPath(parsed.data.next) ?? "/applications", cfg.appOrigin),
+        303,
+      )
     : NextResponse.json({ ok: true });
   response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(cfg.appOrigin));
   return response;

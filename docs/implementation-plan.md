@@ -70,7 +70,7 @@ Exit criteria: every high-risk action blocked without an approved ticket; retry 
 
 ## Phase 4: MCP server
 
-**Status (2026-11-23):** spike done on `feature/phase-4-mcp`: the 2.x SDK (`@modelcontextprotocol/server` 2.4.0) serves 2026-07-28 and 2025-11-25 from one `createMcpHandler` factory inside a Next.js route; it has no OAuth authorization server, so step 1 is a minimal in-app server (owner decision 2026-11-23, decisions log).
+**Status (2026-11-23):** spike done on `feature/phase-4-mcp`: the 2.x SDK (`@modelcontextprotocol/server` 2.4.0) serves 2026-07-28 and 2025-11-25 from one `createMcpHandler` factory inside a Next.js route; it has no OAuth authorization server, so step 1 is a minimal in-app server (owner decision 2026-11-23, decisions log). Slice A done: OAuth metadata, dynamic client registration, consent page with sign-in return, authorization code with PKCE S256, `at+jwt` access tokens with `act`, replay revocation (253 unit and integration tests, 51 end-to-end tests). Slice B next: `/mcp` with bearer verification and the gated tools; slice C: gate modes and client capabilities.
 
 **Spike first** (before steps 1-4): confirm the 2026-07-28 changelog details (no `initialize`, no elicitation completion notification or `elicitationId`, correlation via `requestState`), that the SDK supports both 2026-07-28 and 2025-11-25, and that the SDK's Streamable HTTP transport runs inside a Next.js route. → verify: a minimal server answers a tool call from the SDK client on each revision.
 
