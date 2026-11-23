@@ -74,3 +74,15 @@ describe("gate status flag (FR24)", () => {
     expect(gateStatus({ HITL_GATE_STATUS: "200" })).toBe(403);
   });
 });
+
+describe("handoff flags (FR26, FR27)", () => {
+  it("handoff mode defaults to panel and accepts redirect or both", async () => {
+    const { handoffMode, autoresumeOn } = await import("@/lib/flags");
+    expect(handoffMode({})).toBe("panel");
+    expect(handoffMode({ HITL_HANDOFF_MODE: "redirect" })).toBe("redirect");
+    expect(handoffMode({ HITL_HANDOFF_MODE: "both" })).toBe("both");
+    expect(handoffMode({ HITL_HANDOFF_MODE: "https://evil" })).toBe("panel");
+    expect(autoresumeOn({})).toBe(false);
+    expect(autoresumeOn({ HITL_AUTORESUME: "on" })).toBe(true);
+  });
+});

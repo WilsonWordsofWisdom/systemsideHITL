@@ -12,7 +12,7 @@ import {
   type Classification,
   type ClassifierConfig,
 } from "./classifier";
-import { payloadHash } from "./hash";
+import { payloadHash, stripVolatile } from "./hash";
 import { requestClassifierInput } from "./inputs";
 import { getPolicy, type Decision, type Policy } from "./policy";
 import { buildSnapshot } from "./snapshot";
@@ -236,7 +236,9 @@ export async function hitlGuard(
       action: input.action,
       resourceId: input.resourceId,
       payloadHash: hash,
-      preview,
+      // The request fields the hash covers, so the web Continue button can resubmit
+      // exactly what was approved (FR27).
+      preview: { ...preview, request: stripVolatile(input.action, input.body) },
       actor: { class: actor.class, tier: actor.tier, score: actor.score, facts: actor.facts },
       sessionId: session.id,
       ttlSeconds: input.ttlSeconds,

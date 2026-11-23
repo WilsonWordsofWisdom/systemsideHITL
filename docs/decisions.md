@@ -185,6 +185,12 @@ The owner set `APP_ORIGIN=https://hitltest.vercel.app`, `RP_ID=hitltest.vercel.a
 **Not yet:** "Send to my phone instead" (`/device`, Phase 5); the OTP fallback (W9) stays off and unbuilt.
 **Alternatives:** one cookie with an approval flag on the session (an approval-only sign-in would sign the agent's browser out of the journey).
 
+## 2026-11-23 — Handoff panel, live status and variants (Phase 2 slice C)
+**Decision:** The handoff panel shows what is being approved, the approval link, a QR code of the link (`qrcode` 1.5.4, rendered as SVG on the server; checked on the registry: published since 2010, about 42M weekly downloads, MIT, production audit clean), a countdown and the live status. Status comes from a short-lived SSE stream (`GET /api/hitl/[ticketId]/events`: checks every 1.5 s, closes after 25 s with a `reconnect` event, and stops as soon as the client goes away); the client reopens it, and falls back to polling `GET /api/hitl/[ticketId]` every 3 s on any stream error. On approval the panel shows "Approved: continue" and a Continue button that resubmits exactly the approved request: the guard stores the hashed request fields (volatile fields removed) in the ticket preview, so the resubmission matches the approval hash. `HITL_AUTORESUME=on` resubmits without a click. `HITL_HANDOFF_MODE=redirect` sends a gated form straight to `/approve/[ticketId]` (URL built from `APP_ORIGIN` and the ticket ID only); `both` adds a "Go to the approval page" button to the panel. Declined, superseded and expired requests show what happened and "Submit again".
+**Testing variants:** the flags are fixed per run, so the e2e suite starts extra app servers on ports 3101 and 3102 from the same build (`tests/e2e/variant.ts`) to test redirect mode with `HITL_GATE_STATUS=202`, and auto-resume with `both`. Test pages that end on a waiting panel are now closed, because each held an event stream open; an earlier full run stalled on that.
+**Why:** spec 9.2, FR24, FR26, FR27, architecture risk 2 (SSE on serverless) and section 8 (polling is the contract).
+**Alternatives:** a QR code drawn on the client (more JavaScript, and agents reading the HTML would see no code); long-lived SSE (cut by function timeouts).
+
 ## Open
 - Apply migration `0003` to production before merging Phase 2.
 - Confirm the next merge to `main` deploys automatically now the Git link is fixed.

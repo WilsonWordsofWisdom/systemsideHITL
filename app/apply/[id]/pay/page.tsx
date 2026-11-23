@@ -24,7 +24,7 @@ export default async function PayPage({ params, searchParams }: PageProps<"/appl
         </Notice>
       )}
       {app.status === "paid" && <Notice tone="success" title="The fee has been paid" />}
-      {app.status === "submitted" && handoff && <HandoffPanel ticket={handoff} />}
+      {app.status === "submitted" && handoff && <HandoffPanel ticket={handoff} csrf={csrf} />}
       {app.status === "submitted" && !handoff && (
         <form action={`/api/applications/${app.id}/pay`} method="post" className="space-y-4">
           <CsrfField csrf={csrf} />

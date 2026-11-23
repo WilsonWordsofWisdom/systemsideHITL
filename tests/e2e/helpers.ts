@@ -19,13 +19,13 @@ export async function signIn(page: Page, email: string, password = PASSWORD, sel
 }
 
 // Checks the handoff panel (design.md 4.5) and returns the ticket from its JSON block.
-export async function handoffTicket(page: Page, action: string): Promise<string> {
+export async function handoffTicket(page: Page, action: string, origin = ORIGIN): Promise<string> {
   const panel = page.getByRole("main").getByRole("alert");
   await expect(panel).toContainText("Human approval needed");
   await expect(panel.getByRole("link", { name: /\/approve\/hitl_/ })).toBeVisible();
   const json = JSON.parse((await page.locator("#hitl-handoff").textContent()) ?? "{}");
   expect(json).toMatchObject({ status: "requires_human_approval", action });
-  expect(new URL(json.continue_url).origin).toBe(ORIGIN);
+  expect(new URL(json.continue_url).origin).toBe(origin);
   return json.ticket_id as string;
 }
 

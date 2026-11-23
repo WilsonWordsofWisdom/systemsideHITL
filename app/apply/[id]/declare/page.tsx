@@ -26,7 +26,7 @@ export default async function DeclarePage({
           </Link>
         </Notice>
       ) : handoff ? (
-        <HandoffPanel ticket={handoff} />
+        <HandoffPanel ticket={handoff} csrf={csrf} />
       ) : (
         <form action={`/api/applications/${app.id}/submit`} method="post" className="space-y-4">
           <CsrfField csrf={csrf} />

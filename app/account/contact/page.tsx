@@ -27,7 +27,7 @@ export default async function ContactPage({ searchParams }: PageProps<"/account/
       {query.saved === "1" && <Notice tone="success" title="Contact details saved" />}
       <p className="mb-6">These are used to recover your account if you lose access.</p>
       {handoff ? (
-        <HandoffPanel ticket={handoff} />
+        <HandoffPanel ticket={handoff} csrf={csrf} />
       ) : (
         <form action="/api/account/contact" method="post" className="max-w-md space-y-4">
           <CsrfField csrf={csrf} />

@@ -1,23 +1,9 @@
 import { defineConfig } from "@playwright/test";
-import { E2E_ORIGIN, E2E_PORT, e2eDatabase } from "./tests/e2e/env";
+import { E2E_ORIGIN, E2E_PORT, e2eAppEnv } from "./tests/e2e/env";
 
-// End-to-end tests run against a production build and a separate Supabase test
-// database (from .env.test.local), never the production database.
-const db = e2eDatabase();
-
-const appEnv = {
-  DATABASE_URL: db.pooled,
-  DIRECT_DATABASE_URL: db.direct,
-  DB_POOL_MAX: "3",
-  APP_ORIGIN: E2E_ORIGIN,
-  RP_ID: "localhost",
-  SESSION_SECRET: "e2e-session-secret-0123456789abcdef",
-  HITL_MODE: "enforce",
-  AGENT_HINTS: "off",
-  SELF_DECLARE_UI: "on",
-  // Open so the e2e suite can enrol a virtual passkey; the closed state is unit-tested.
-  PASSKEY_ENROLMENT: "open",
-};
+// End-to-end tests run against a production build and a test database (local
+// Docker by default, or the Supabase test project), never the production database.
+const appEnv = e2eAppEnv(E2E_ORIGIN);
 
 export default defineConfig({
   testDir: "tests/e2e",

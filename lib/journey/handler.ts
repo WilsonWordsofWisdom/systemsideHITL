@@ -6,9 +6,15 @@ import { getCurrentSession } from "../auth/current";
 import { verifyCsrf } from "../auth/session";
 import type { AppDb } from "../db/types";
 import { getDb } from "../db/server";
-import { gateStatus } from "../flags";
+import { gateStatus, handoffMode } from "../flags";
 import { hitlGuard, type GuardResult } from "../hitl/guard";
-import { STEP_UP_HEADER, deniedBody, gatedBody, ticketInvalidBody } from "../hitl/response";
+import {
+  STEP_UP_HEADER,
+  continueUrl,
+  deniedBody,
+  gatedBody,
+  ticketInvalidBody,
+} from "../hitl/response";
 import { isSameOrigin, readBody, wantsHtml } from "../http";
 import { JOURNEY_ERROR_STATUS, JourneyError } from "./service";
 
@@ -144,7 +150,12 @@ function guardResponse(
   switch (guard.kind) {
     case "gated": {
       if (html) {
-        // The step page shows the handoff panel for this ticket (FR26).
+        // Redirect mode sends the browser to the approval page; the URL is built
+        // here from APP_ORIGIN and the ticket ID only (FR26, T7).
+        if (handoffMode() === "redirect") {
+          return NextResponse.redirect(continueUrl(appOrigin, guard.ticket.id), 303);
+        }
+        // Otherwise the step page shows the handoff panel for this ticket.
         const url = new URL(opts.errorPath, appOrigin);
         url.searchParams.set("ticket", guard.ticket.id);
         return NextResponse.redirect(url, 303);

@@ -23,7 +23,7 @@ export default async function DeletePage({
         undone.
       </p>
       {handoff ? (
-        <HandoffPanel ticket={handoff} />
+        <HandoffPanel ticket={handoff} csrf={csrf} />
       ) : (
         <div className="flex flex-wrap gap-3">
           <form action={`/api/applications/${app.id}/delete`} method="post">

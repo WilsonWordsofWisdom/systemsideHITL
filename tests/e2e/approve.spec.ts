@@ -158,6 +158,8 @@ test("only the ticket's own user can approve it (W3)", async ({ browser }) => {
   await expect(other.getByRole("button", { name: "Approve with passkey" })).toHaveCount(0);
   await expect(other.getByRole("main")).not.toContainText("Riverside Picnic");
   expect(await state(bot, ticket)).toBe("pending");
+  await bot.close();
+  await other.close();
 });
 
 test("the account holder declines; a retry is rejected", async ({ page }) => {

@@ -87,6 +87,9 @@ test("another user can't read the ticket status", async ({ browser }) => {
   await signedIn(second, SECOND);
   const poll = await second.request.get(`/api/hitl/${gated.ticket_id}`);
   expect(poll.status()).toBe(404);
+  // Close both, so the waiting page doesn't keep an event stream open.
+  await demo.close();
+  await second.close();
 });
 
 test("the update_contact API is denied to a suspected agent", async ({ page }) => {

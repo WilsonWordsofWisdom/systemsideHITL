@@ -111,6 +111,10 @@ describe("decisions", () => {
       requestingSessionId: s.id,
     });
     expect(g.ticket.payloadPreview).toMatchObject({ title: "Riverside Picnic" });
+    // The hashed request fields, without volatile ones, for the Continue button.
+    expect((g.ticket.payloadPreview as { request: unknown }).request).toEqual({
+      declaration: "on",
+    });
     const [row] = await logsFor(s.id);
     expect(row).toMatchObject({
       outcome: "gated",

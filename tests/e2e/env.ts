@@ -69,3 +69,22 @@ export function e2eDatabase() {
   }
   return { pooled, direct };
 }
+
+// Environment for an app server under test. Variant servers (tests/e2e/variant.ts)
+// start from this and override the experiment flags.
+export function e2eAppEnv(origin: string): Record<string, string> {
+  const db = e2eDatabase();
+  return {
+    DATABASE_URL: db.pooled,
+    DIRECT_DATABASE_URL: db.direct,
+    DB_POOL_MAX: "3",
+    APP_ORIGIN: origin,
+    RP_ID: "localhost",
+    SESSION_SECRET: "e2e-session-secret-0123456789abcdef",
+    HITL_MODE: "enforce",
+    AGENT_HINTS: "off",
+    SELF_DECLARE_UI: "on",
+    // Open so the e2e suite can enrol a virtual passkey; the closed state is unit-tested.
+    PASSKEY_ENROLMENT: "open",
+  };
+}
