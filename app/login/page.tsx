@@ -1,4 +1,5 @@
 import { selfDeclareUiOn } from "@/lib/flags";
+import { safeNextPath } from "@/lib/oauth/authorize";
 import { PasskeySignIn } from "./passkey-sign-in";
 
 // Sign-in page (FR6, FR8). Messages are chosen by code; nothing from the URL is shown.
@@ -31,6 +32,8 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const code = typeof params.error === "string" ? params.error : undefined;
   const message = code && code in MESSAGES ? MESSAGES[code as keyof typeof MESSAGES] : undefined;
   const signedOut = params.signed_out === "1";
+  // Only the OAuth consent page may be returned to after sign-in.
+  const next = safeNextPath(params.next);
 
   return (
     <div className="max-w-md">
@@ -99,6 +102,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         )}
         {/* Filled by signals.js on submit; stays empty without JavaScript. */}
         <input type="hidden" name="signals" defaultValue="" />
+        {next && <input type="hidden" name="next" value={next} />}
         <button
           type="submit"
           className="h-10 w-full rounded-full bg-primary text-sm font-medium text-on-primary"
@@ -115,7 +119,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         or
         <span className="h-px flex-1 bg-outline-variant" />
       </div>
-      <PasskeySignIn />
+      <PasskeySignIn next={next ?? undefined} />
     </div>
   );
 }

@@ -46,6 +46,8 @@ describe("database", () => {
       "client_signals",
       "hitl_tickets",
       "mcp_clients",
+      "oauth_codes",
+      "oauth_tokens",
       "passkeys",
       "rate_limits",
       "request_log",

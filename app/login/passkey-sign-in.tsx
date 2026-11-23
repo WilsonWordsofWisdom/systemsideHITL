@@ -14,9 +14,11 @@ declare global {
 // session on /approve (W11); the server decides where to go next.
 export function PasskeySignIn({
   ticketId,
+  next,
   label = "Sign in with a passkey",
 }: {
   ticketId?: string;
+  next?: string;
   label?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +40,7 @@ export function PasskeySignIn({
           response,
           signals: JSON.stringify(window.__dgSignals?.() ?? {}),
           ...(ticketId ? { mode: "approval", ticketId } : {}),
+          ...(next ? { next } : {}),
         }),
       });
       if (!finish.ok) throw new Error();

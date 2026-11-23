@@ -216,9 +216,66 @@ Migration `0003` was applied to production before PR #5 was merged (4 migrations
 **Why:** FR39, design.md 4.8, controls L3, A3; J11.
 **Alternatives:** resetting passkeys too (would remove the owner's enrolled approver passkeys on production); a reset confirmation page instead of a dialog.
 
+## 2026-11-23 — Phase 3 deployed
+Migration `0004` was applied to production before PR #6 was merged (5 migrations; `runs` with RLS, `sessions.run_id`). The merge deployed `4a57323` automatically. Verified on production: `/console` serves the sign-in with `X-Robots-Tag: noindex, nofollow` and the `noindex` meta tag; the landing page has no console link; `/?run=prodcheck1` sets an HttpOnly run cookie and the following sign-in is stored with that run; a demo-user session gets the console sign-in and a `403` on export. `ADMIN_SECRET` is not yet set on production, so the console shows "not set up".
+
+## 2026-11-23 — Phase 4 spike: MCP SDK 2.x, both revisions, inside Next.js
+**Findings (from the published packages, read without running them, then tested):**
+- `@modelcontextprotocol/sdk` 1.32.2 (latest 1.x, 2026-10-23) supports protocol revisions only up to 2025-11-25.
+- The split 2.x SDK, `@modelcontextprotocol/server`, `client` and `core` 2.4.0 (2026-10-23, same maintainers, about 34M weekly downloads for `server`), serves both eras. Revision 2026-07-28 ("modern") is negotiated through `server/discover`, and the 2025 revisions ("legacy") through `initialize`, with a codec chosen per request. `createMcpHandler(factory, { legacy: "stateless" })` serves both from one factory as a web-standard `Request` -> `Response` handler, building a fresh server per request. It performs no token verification: `authInfo` is passed through to tools.
+- Confirmed 2026-07-28 details from the SDK source: no `initialize`; the version is negotiated per request in a `_meta` envelope; `server/discover` is mandatory for servers; the elicitation completion notification is removed (the client retries the original request); out-of-band input uses `input_required` with `inputRequests` and `requestState`; `subscriptions/listen` replaces the HTTP GET stream; sampling, roots and logging are deprecated.
+- The 2.4.0 client defaults to the legacy handshake (`versionNegotiation` must be `auto` or a pin to use 2026-07-28). Many real clients are therefore likely to arrive on 2025-11-25, which supports serving both.
+- Verified: `tests/integration/mcp-spike.test.ts` (pinned 2026-07-28, auto, legacy 2025-11-25 and the default client, each calling a tool), and a temporary route in a production Next.js build called over HTTP on all three (removed afterwards; nothing unauthenticated was committed).
+- The 2.x SDK has no OAuth authorization server. It has only resource-server pieces (bearer verification and RFC 9728 metadata, Express-only) and Zod schemas for OAuth payloads. The 1.x authorization-server router was Express-only too.
+**Decision:** Use the 2.x SDK (`@modelcontextprotocol/server` at runtime, `@modelcontextprotocol/client` for tests only), served by `createMcpHandler` in a Next.js route. Both added after a registry check; `npm audit --omit=dev` is clean, and they share the app's `zod` 4.
+
+## 2026-11-23 — MCP OAuth: a minimal authorization server built into the app (supersedes "using the SDK's auth helpers")
+**Decision (owner, 2026-11-23):** Hand-build a small OAuth 2.1 authorization server in the app, because the SDK no longer provides one: dynamic client registration (RFC 7591, exact redirect URIs, HTTPS or loopback), a consent screen naming the client, authorization code with PKCE S256 only, short-lived signed JWT access tokens with `sub` = user, `act` = client and `aud` = the `/mcp` resource, and authorization server (RFC 8414) and protected resource (RFC 9728) metadata. Payloads are validated with the SDK's OAuth Zod schemas.
+**Why:** It fits Next.js route handlers on Vercel, keeps the `act` claim and consent screen under our control, and has no third-party account.
+**Risk and mitigation:** This is security-sensitive code that we own. Each OAuth control (M1-M3) gets negative tests, the token library is checked on the registry before install, and the design follows the MCP authorization spec.
+**Alternatives:** `oidc-provider` (certified, but expects Node/Koa request objects and needs a storage adapter); an external IdP with MCP support (least code, adds a third party and possible cost).
+
+## 2026-11-23 — MCP OAuth server details (Phase 4 slice A)
+**Decision:**
+- **Metadata:** RFC 8414 at `/.well-known/oauth-authorization-server`; RFC 9728 at `/.well-known/oauth-protected-resource/mcp` and at the root path.
+- **Registration:** `POST /api/oauth/register` (RFC 7591) accepts public clients only (`token_endpoint_auth_method: none`, `authorization_code` only) with 1-5 redirect URIs. Each URI must be HTTPS, or HTTP on `localhost`, `127.0.0.1` or `[::1]`, with no fragment or credentials. It is validated with the SDK's `OAuthClientMetadataSchema`, and the client name is cleaned and shortened for the consent screen. Limited to 30 registrations per IP hash per hour.
+- **Authorization:** `/oauth/authorize` shows an unknown client or unregistered redirect URI on our own page and never redirects (no open redirect). Other errors go back to the registered URI with `state` and `iss` (RFC 9207). It requires `response_type=code`, PKCE S256, `resource` equal to `<origin>/mcp` when sent, and the scope `mcp`.
+- **Sign-in and consent:** a signed-out user goes to `/login?next=…`, where only `/oauth/authorize?…` is accepted as a return path (password and passkey sign-in). The consent page names the client and the account, and says that every gated action still needs the account holder's passkey.
+- **Returning to the client:** the consent decision returns through a small page with its own strict CSP and `no-referrer`. A redirect after a form post would be blocked by our `form-action 'self'` policy, and this way the code stays out of our own URLs.
+- **Codes:** a code is stored as a SHA-256 and lasts 5 minutes. It is redeemed in one conditional update, bound to client, redirect URI, user, PKCE challenge and resource. A replayed code revokes the token issued from it.
+- **Tokens:** access tokens are `at+jwt` JWTs signed HS256 with a key derived from `SESSION_SECRET` (the issuer and the resource are this same app, so there is no published key set and no key table). They carry `iss`, `sub` = user, `aud` = `<origin>/mcp`, `act.sub` = `client_id` = the client, `scope`, `jti` and a 1-hour `exp`. Each one is recorded in `oauth_tokens`, so verification also checks that it was issued here and isn't revoked. There are no refresh tokens; a client signs in again after an hour.
+- **Other:** metadata, registration and token endpoints send `Access-Control-Allow-Origin: *` (they use no cookies). "Reset demo data" also clears codes and tokens but keeps registered clients. New tables `oauth_codes` and `oauth_tokens` (migration `0005`). Dependencies: `jose` 6.2.16 (panva, MIT, no dependencies; the newest release was under two weeks old, so the previous one was pinned) and `@modelcontextprotocol/core` 2.4.0 as a direct dependency.
+
+**Why:** FR30, controls M1-M3, the MCP authorization spec.
+**Not yet:** OAuth Client ID Metadata Documents (URL client IDs) and refresh tokens; add if a live client needs them.
+
+## 2026-11-23 — /mcp endpoint and tools (Phase 4 slice B)
+**Decision:**
+- **The endpoint:** `/mcp` (the OAuth resource) serves Streamable HTTP through `createMcpHandler` for both 2026-07-28 and the 2025 revisions.
+- **Authentication:** every request needs a bearer token from our OAuth server, verified for signature, issuer, audience `<origin>/mcp`, expiry, actor claim, issuance and revocation. Without one the answer is `401` with `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"`, plus `error="invalid_token"` for a bad token.
+- **Sessions:** each OAuth client plus user gets one server-side session row (`signinMethod = oauth_mcp`, login class `declared_agent`, `declared_agent = true`), so the guard, risk state, tickets and console work unchanged. Tickets are bound to that session (and record the client), so they stay redeemable by the same client and user across tokens, and another client gets `wrong_session`. The row ID is `SHA-256("mcp:" + HMAC(SESSION_SECRET, client and user))`, so it can't be guessed, and `validateSession` refuses `oauth_mcp` rows as cookies.
+- **Tools:** the nine journey tools plus `get_approval_status` and `get_journey_state`. Mutating tools call the same `hitlGuard` with the client as tier A protocol identity (always `declared_agent`, high confidence), log the tool name, and take an optional `hitl_ticket_id`.
+- **Gate responses (`tool_result` mode, the default):** a gated call returns `requires_human_approval` with `isError: false`, the ticket, the approval link and `resume: { poll_tool: "get_approval_status", retry_with_argument: "hitl_ticket_id" }`. Denials, invalid tickets and journey errors return `isError: true`.
+- **Logging and runs:** read-only tools are logged too. A tester tags a run by adding `?run=<id>` to the MCP server URL.
+- **Descriptions:** neutral, each stating its risk level, and checked by the content lint.
+
+**Why:** FR19, FR29, FR31, FR32 (`tool_result`), controls M1, M4, C4, P1.
+**Next:** slice C (decision below).
+
+## 2026-11-23 — MCP gate modes, client capabilities and step-scoped tools (Phase 4 slice C)
+**Decision:**
+- **`MCP_GATE_MODE=elicitation`** applies only to clients that declared URL elicitation (`capabilities.elicitation.url`); every other client gets the `tool_result` response, which stays the default.
+  - **2026-07-28:** a gated call returns `input_required` with one URL request (the approval page) and a `requestState` naming the ticket. The state is sealed with the SDK's HMAC codec (a key derived from `SESSION_SECRET`), bound to the MCP session, and lives as long as a ticket. The client retries with it; a retry while the ticket is still pending asks again, a `decline` or `cancel` answer falls back to the `tool_result` response, and a modified state or one from another session is refused (`-32602`) before the tool runs.
+  - **2025-11-25:** a gated call fails with `-32042`, mode `url`, `elicitationId` = ticket ID. The client retries with `hitl_ticket_id`; a retry while pending gets `-32042` again.
+  - **No completion notification on 2025-11-25** (changes J08). Legacy requests are served statelessly (`legacy: "stateless"`, one server per request on Vercel), so there is no stream to send `notifications/elicitation/complete` on. The client retries after the user finishes, as on 2026-07-28. Sessionful legacy serving would need sticky instances or a shared event store.
+- **Client capabilities (M6):** the route reads each JSON-RPC request once. On 2026-07-28 the revision and capabilities come from the request's `_meta` envelope; on 2025-11-25 they come from `initialize`, and later stateless requests read them back from the session's latest `initialize` row in `request_log`. Each request is logged with them in `actor_signals.mcp`: tool calls by the tools and the guard, other requests (`initialize`, `server/discover`, `tools/list`) by the route. The console's signals column shows "MCP <revision> · URL elicitation" or "no URL elicitation". No migration.
+- **`MCP_STEP_SCOPED_TOOLS=on`:** a `tools/list` request lists the read-only tools, `create_draft`, `update_contact`, and each application's next actions from its journey state. Only the list changes: a tool call always registers every tool, so a hidden tool still reaches the guard and is logged (M5).
+
+**Why:** FR32, FR33, FR34, controls M5-M7, J08.
+**Alternatives:** sessionful legacy serving to send the completion notification (needs shared state across serverless instances); hiding tools by disabling them on calls too (the guard would never see premature attempts, which J08's manual scenario records).
+
 ## Open
-- Apply migration `0004` to production before merging Phase 3.
+- Apply migration `0005` to production before merging Phase 4.
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.
 - Optional before Phase 6: GitHub Actions e2e run against the Supabase test project (exercises the pooler).
-- Phase 4 spike: confirm the 2026-07-28 changelog details, SDK support for both revisions, and the MCP SDK inside a Next.js route.
 - Phase 6 capability check: whether Muse can browse or use MCP.

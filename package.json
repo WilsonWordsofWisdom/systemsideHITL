@@ -19,10 +19,13 @@
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/core": "^2.4.0",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@node-rs/argon2": "^2.2.2",
     "@simplewebauthn/browser": "^14.0.0",
     "@simplewebauthn/server": "^14.1.0",
     "drizzle-orm": "^0.45.4",
+    "jose": "^6.2.16",
     "next": "16.4.6",
     "postgres": "^4.1.1",
     "qrcode": "^1.5.4",
@@ -34,6 +37,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.17",
+    "@modelcontextprotocol/client": "^2.4.0",
     "@playwright/test": "^1.65.1",
     "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^24.19.2",

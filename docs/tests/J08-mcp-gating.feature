@@ -53,9 +53,12 @@ Feature: Gating over MCP
     And the client negotiated revision "2025-11-25" and declared URL elicitation support
     When the client calls "submit_application"
     Then the server returns error -32042 with mode "url", elicitationId equal to the ticket_id and the continue_url
-    When the approver approves
-    Then the server sends notifications/elicitation/complete
-    And the client's retry with hitl_ticket_id executes once
+    When the client retries with hitl_ticket_id before the approver approves
+    Then the server returns error -32042 again for the same ticket
+    When the approver approves and the client retries with hitl_ticket_id
+    Then the application is submitted once
+    # No notifications/elicitation/complete is sent: legacy requests are served
+    # statelessly, so there is no stream to send it on (decision 2026-11-23).
 
   @integration @T13 @FR29 @FR32
   Scenario: URL elicitation on revision 2026-07-28
@@ -63,8 +66,23 @@ Feature: Gating over MCP
     And the client uses revision "2026-07-28" and supports URL elicitation
     When the client calls "submit_application"
     Then the server asks for a URL interaction carrying the continue_url and a requestState that identifies the ticket
+    When the client retries with that requestState before the approver approves
+    Then the server asks again for the same ticket
     When the approver approves and the client retries with that requestState
     Then the application is submitted once
+
+  @integration @FR32
+  Scenario: A declined approval link falls back to tool_result
+    Given MCP_GATE_MODE is "elicitation" and the client uses revision "2026-07-28"
+    When the client answers the URL interaction with "decline" or "cancel"
+    Then it receives the tool_result requires_human_approval response for the same ticket
+
+  @integration @FR19 @M7
+  Scenario: requestState can't be forged or moved to another client
+    Given MCP_GATE_MODE is "elicitation" and the client uses revision "2026-07-28"
+    When a retry carries a modified requestState, or one issued to another client's session
+    Then the request is refused with "Invalid or expired requestState"
+    And the action does not execute
 
   @integration @FR32
   Scenario: A client without URL elicitation falls back to tool_result

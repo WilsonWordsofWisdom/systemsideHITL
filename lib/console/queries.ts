@@ -120,11 +120,23 @@ export function signalsSummary(signals: unknown): string {
     sticky?: boolean;
     riskChange?: { to?: string } | null;
     facts?: { classifierError?: boolean; selfDeclared?: boolean };
+    mcp?: {
+      era?: string;
+      protocolVersion?: string | null;
+      capabilities?: { elicitation?: { url?: unknown } } | null;
+    };
   };
   if (s.facts?.classifierError) return "classifier error";
   const parts: string[] = [];
   if (s.tier === "A") parts.push("protocol identity");
   if (s.tier === "B") parts.push("self-declared");
+  // The MCP client's revision and URL elicitation support (control M6).
+  if (s.mcp) {
+    parts.push(`MCP ${s.mcp.protocolVersion ?? s.mcp.era}`);
+    if (s.mcp.capabilities) {
+      parts.push(s.mcp.capabilities.elicitation?.url ? "URL elicitation" : "no URL elicitation");
+    }
+  }
   const hits = Object.keys(s.contributions ?? {}).map((k) => SHORT[k] ?? k);
   if (hits.length) parts.push(hits.join(", "));
   if (typeof s.score === "number") parts.push(`score ${s.score}`);

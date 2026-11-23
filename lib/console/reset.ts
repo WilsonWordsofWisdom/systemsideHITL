@@ -1,12 +1,15 @@
 // "Reset demo data" (spec 11.1, J11, control L3): clears logs, tickets and
-// sessions and restores the seed applications, in one transaction. Users and
-// their passwords, passkeys (the owner's real approver credentials), run
-// ground truth and MCP clients are kept. The caller logs the reset afterwards.
+// sessions (including OAuth codes and tokens) and restores the seed applications,
+// in one transaction. Users and their passwords, passkeys (the owner's real
+// approver credentials), run ground truth and registered MCP clients are kept.
+// The caller logs the reset afterwards.
 import { sql } from "drizzle-orm";
 import {
   applications,
   clientSignals,
   hitlTickets,
+  oauthCodes,
+  oauthTokens,
   rateLimits,
   requestLog,
   sessionEvents,
@@ -29,6 +32,8 @@ export async function resetDemoData(db: AppDb) {
       tickets: await count(hitlTickets),
       challenges: await count(webauthnChallenges),
       sessions: await count(sessions),
+      oauthCodes: await count(oauthCodes),
+      oauthTokens: await count(oauthTokens),
       rateLimits: await count(rateLimits),
       applications: await count(applications),
     };

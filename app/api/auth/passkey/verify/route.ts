@@ -18,6 +18,7 @@ import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/h
 import { clientContextHash, loginClassifierInput, recordLoginRisk } from "@/lib/hitl/inputs";
 import { TICKET_ID_PATTERN } from "@/lib/hitl/tickets";
 import { runIdFromRequest } from "@/lib/console/run";
+import { safeNextPath } from "@/lib/oauth/authorize";
 import { headerFacts, parseSignals } from "@/lib/signals";
 
 const Body = z.object({
@@ -27,6 +28,7 @@ const Body = z.object({
   // "approval": sign in on /approve/[ticketId] for an approval-only session.
   mode: z.enum(["signin", "approval"]).optional(),
   ticketId: z.string().max(100).optional(),
+  next: z.string().max(4096).optional(),
 });
 
 function cookieValue(request: Request, name: string) {
@@ -147,7 +149,7 @@ export async function POST(request: Request) {
     ? TICKET_ID_PATTERN.test(ticketId)
       ? `/approve/${ticketId}`
       : "/"
-    : "/applications";
+    : (safeNextPath(parsed.data.next) ?? "/applications");
   const response = NextResponse.json({ ok: true, redirect });
   response.cookies.set(cookieName, token, sessionCookieOptions(appOrigin));
   return response;
