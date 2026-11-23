@@ -15,7 +15,7 @@ import { getDb } from "@/lib/db/server";
 import { clientIp, ipHash, isSameOrigin } from "@/lib/http";
 import { logEvent } from "@/lib/log";
 import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/hitl/classifier";
-import { clientContextHash, loginClassifierInput } from "@/lib/hitl/inputs";
+import { clientContextHash, loginClassifierInput, recordLoginRisk } from "@/lib/hitl/inputs";
 import { TICKET_ID_PATTERN } from "@/lib/hitl/tickets";
 import { headerFacts, parseSignals } from "@/lib/signals";
 
@@ -136,6 +136,7 @@ export async function POST(request: Request) {
     },
     now,
   );
+  await recordLoginRisk(db, session.id, actor, now);
   if (!approval) await revokeOtherSessions(db, stored.userId, session.id, "passkey_reset", now);
 
   // The return path is built here, never taken from the client (control T7).

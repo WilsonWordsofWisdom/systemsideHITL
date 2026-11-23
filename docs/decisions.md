@@ -191,6 +191,12 @@ The owner set `APP_ORIGIN=https://hitltest.vercel.app`, `RP_ID=hitltest.vercel.a
 **Why:** spec 9.2, FR24, FR26, FR27, architecture risk 2 (SSE on serverless) and section 8 (polling is the contract).
 **Alternatives:** a QR code drawn on the client (more JavaScript, and agents reading the HTML would see no code); long-lived SSE (cut by function timeouts).
 
+## 2026-11-23 — Session risk state and handover (Phase 2 slice D)
+**Decision:** `sessions.risk_state` changes only through `escalateRisk` in `lib/auth/session.ts`: one conditional update that matches only a live session below the target state, plus a `session_events` row (`risk_changed`, from and to state, trigger, signals). `nextRiskState` encodes the architecture 4.9 diagram: a changed client context (user-agent or IP hash differs from sign-in) moves `clean` or `agent_observed` to `handover_suspected`; fresh agent evidence (tier A, B or a score at the threshold, not a class carried over) moves `clean` to `agent_observed`, or to `handover_suspected` if the session started with a human-leaning passkey login; nothing lowers it. Sign-in with agent evidence starts the session at `agent_observed` (`login_agent_evidence`). The guard applies the transition on every guarded request and, when the state rises, classifies the same request again under the new state, so the escalation counts at once (a changed context alone scores 30, below the threshold, but makes that request `suspected_agent`). A fresh passkey sign-in on `/login` remains the only way back: it starts a new clean session and ends the others.
+**Why:** FR35-FR38, controls A8, A9, S10; T10a-c.
+**Scope:** the classifier and risk state run on guarded (mutating) requests; page views and reads don't classify. The console timeline of these events is Phase 3; Web Bot Auth per-request attribution (T10d) is Phase 5.
+**Test runner stall:** two full e2e runs out of about eight stalled for 1.5-3 minutes while Playwright created a new browser context for the next test (fixture setup for `page` or `request`, before the test touched the app), each after tests that attach Chrome virtual authenticators over CDP. It did not reproduce in four runs with API logging on. Every virtual authenticator is now removed and its CDP session detached after its test; the next five runs were clean (nine clean in a row in total). If it returns, capture a trace of the stalled fixture.
+
 ## Open
 - Apply migration `0003` to production before merging Phase 2.
 - Confirm the next merge to `main` deploys automatically now the Git link is fixed.

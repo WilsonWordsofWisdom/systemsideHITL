@@ -1,11 +1,16 @@
 // Builds classifier input from a request and its session (architecture 4.7, 4.9).
 import { desc, eq } from "drizzle-orm";
 import { sha256Hex } from "../auth/crypto";
-import type { SessionRow } from "../auth/session";
+import { escalateRisk, type SessionRow } from "../auth/session";
 import { clientSignals } from "../db/schema";
 import type { AppDb } from "../db/types";
 import { clientIp, ipHash } from "../http";
-import type { BehaviourSnapshot, ClassifierConfig, ClassifierInput } from "./classifier";
+import type {
+  BehaviourSnapshot,
+  Classification,
+  ClassifierConfig,
+  ClassifierInput,
+} from "./classifier";
 
 const MAX_SNAPSHOTS = 20;
 
@@ -83,4 +88,28 @@ export function loginClassifierInput(
     clientContextChanged: false,
     session: { signinMethod: opts.signinMethod, loginActorClass: "unknown", riskState: "clean" },
   };
+}
+
+// Agent evidence at sign-in starts the new session at agent_observed, recorded as
+// a session event (architecture 4.9 layer 3). A clean sign-in stays clean.
+export async function recordLoginRisk(
+  db: AppDb,
+  sessionId: string,
+  actor: Classification,
+  now: Date,
+) {
+  if (actor.class !== "declared_agent" && actor.class !== "suspected_agent") return;
+  await escalateRisk(
+    db,
+    sessionId,
+    "agent_observed",
+    "login_agent_evidence",
+    {
+      class: actor.class,
+      tier: actor.tier,
+      score: actor.score,
+      contributions: actor.contributions,
+    },
+    now,
+  );
 }

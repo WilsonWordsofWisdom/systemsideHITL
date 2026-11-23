@@ -6,6 +6,7 @@ import {
   ORIGIN,
   SECOND,
   addAuthenticator,
+  removeAuthenticators,
   clearLoginLock,
   enrolPasskey,
   expectSignedIn,
@@ -15,6 +16,7 @@ import {
 } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
+test.afterEach(removeAuthenticators);
 
 const csrfOf = async (page: Page) =>
   (await page.locator('meta[name="csrf-token"]').getAttribute("content"))!;

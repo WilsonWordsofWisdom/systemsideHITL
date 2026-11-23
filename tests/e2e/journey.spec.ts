@@ -6,6 +6,7 @@ import {
   DEMO,
   ORIGIN,
   addAuthenticator,
+  removeAuthenticators,
   approveWithPasskey,
   enrolPasskey,
   handoffTicket,
@@ -13,6 +14,7 @@ import {
 } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
+test.afterEach(removeAuthenticators);
 const SECOND_APP = "00000000-0000-4000-8000-000000000201";
 
 // Every journey page: one h1, labelled controls, the step indicator, a next-step

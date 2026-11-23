@@ -7,6 +7,7 @@ import {
   IDLE_TIMEOUT_MS,
   createSession,
   csrfTokenFor,
+  escalateRisk,
   revokeOtherSessions,
   revokeSession,
   validateSession,
@@ -130,5 +131,80 @@ describe("CSRF tokens", () => {
     expect(verifyCsrf("session-b", token, secret)).toBe(false);
     expect(verifyCsrf("session-a", undefined, secret)).toBe(false);
     expect(verifyCsrf("session-a", token, "t".repeat(32))).toBe(false);
+  });
+});
+
+describe("risk state (A9, FR35)", () => {
+  it("escalates once, records the change, and never goes back down", async () => {
+    const { session } = await createSession(
+      db,
+      { userId: DEMO_USER_ID, signinMethod: "password" },
+      t0,
+    );
+    expect(
+      await escalateRisk(db, session.id, "agent_observed", "agent_evidence", { score: 50 }, t0),
+    ).toEqual({
+      from: "clean",
+      to: "agent_observed",
+    });
+    // Same or lower target: no change and no event.
+    expect(
+      await escalateRisk(db, session.id, "agent_observed", "agent_evidence", {}, t0),
+    ).toBeNull();
+    expect(await escalateRisk(db, session.id, "clean", "reset", {}, t0)).toBeNull();
+    expect(
+      await escalateRisk(
+        db,
+        session.id,
+        "handover_suspected",
+        "client_context_changed",
+        {},
+        at(MIN),
+      ),
+    ).toEqual({ from: "agent_observed", to: "handover_suspected" });
+
+    const [row] = await db.select().from(sessions).where(eq(sessions.id, session.id));
+    expect(row.riskState).toBe("handover_suspected");
+    const events = await db
+      .select()
+      .from(sessionEvents)
+      .where(eq(sessionEvents.sessionId, session.id))
+      .orderBy(sessionEvents.ts);
+    expect(events.map((e) => [e.event, e.fromState, e.toState, e.trigger])).toEqual([
+      ["risk_changed", "clean", "agent_observed", "agent_evidence"],
+      ["risk_changed", "agent_observed", "handover_suspected", "client_context_changed"],
+    ]);
+    expect(events[0].signals).toEqual({ score: 50 });
+  });
+
+  it("doesn't change an ended session, and ending one keeps its events", async () => {
+    const { session } = await createSession(
+      db,
+      { userId: DEMO_USER_ID, signinMethod: "password" },
+      t0,
+    );
+    await escalateRisk(db, session.id, "agent_observed", "agent_evidence", {}, t0);
+    await revokeSession(db, session.id, "rotated", at(MIN));
+    expect(
+      await escalateRisk(db, session.id, "handover_suspected", "x", {}, at(2 * MIN)),
+    ).toBeNull();
+    const events = await db
+      .select()
+      .from(sessionEvents)
+      .where(eq(sessionEvents.sessionId, session.id));
+    expect(events.map((e) => e.event).sort()).toEqual(["risk_changed", "session_revoked"]);
+  });
+
+  it("a fresh passkey sign-in starts a clean session and ends the risky one (T10b)", async () => {
+    const risky = await createSession(db, { userId: DEMO_USER_ID, signinMethod: "password" }, t0);
+    await escalateRisk(db, risky.session.id, "agent_observed", "agent_evidence", {}, t0);
+    const fresh = await createSession(
+      db,
+      { userId: DEMO_USER_ID, signinMethod: "passkey" },
+      at(MIN),
+    );
+    await revokeOtherSessions(db, DEMO_USER_ID, fresh.session.id, "passkey_reset", at(MIN));
+    expect(fresh.session.riskState).toBe("clean");
+    expect(await validateSession(db, risky.token, at(MIN))).toBeNull();
   });
 });

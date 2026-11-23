@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type CDPSession, type Page } from "@playwright/test";
 import postgres from "postgres";
 import { E2E_DEMO_PASSWORD, E2E_ORIGIN, e2eDatabase } from "./env";
 
@@ -53,6 +53,9 @@ export async function expectSignedIn(page: Page, name: string) {
   await expect(page.getByText(`Signed in as ${name}`).first()).toBeVisible();
 }
 
+// Virtual authenticators still attached, removed by removeAuthenticators().
+const attached: { cdp: CDPSession; authenticatorId: string }[] = [];
+
 // Chrome's virtual WebAuthn authenticator (test mode only, control W8).
 export async function addAuthenticator(page: Page) {
   const cdp = await page.context().newCDPSession(page);
@@ -67,7 +70,17 @@ export async function addAuthenticator(page: Page) {
       automaticPresenceSimulation: true,
     },
   });
+  attached.push({ cdp, authenticatorId });
   return { cdp, authenticatorId };
+}
+
+// Removes every virtual authenticator and detaches its DevTools session, so no
+// test leaves one behind when its browser context closes. Call in afterEach.
+export async function removeAuthenticators() {
+  for (const { cdp, authenticatorId } of attached.splice(0)) {
+    await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId }).catch(() => {});
+    await cdp.detach().catch(() => {});
+  }
 }
 
 export async function enrolPasskey(page: Page) {

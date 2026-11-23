@@ -18,7 +18,7 @@ import {
   recordFailure,
 } from "@/lib/ratelimit";
 import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/hitl/classifier";
-import { clientContextHash, loginClassifierInput } from "@/lib/hitl/inputs";
+import { clientContextHash, loginClassifierInput, recordLoginRisk } from "@/lib/hitl/inputs";
 import { headerFacts, parseSignals } from "@/lib/signals";
 
 const LoginForm = z.object({
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     loginClassifierInput(request, { signinMethod: "password", selfDeclared, snapshot: client }),
     getClassifierConfig(),
   );
-  const { token } = await createSession(
+  const { token, session } = await createSession(
     db,
     {
       userId: user.id,
@@ -109,6 +109,7 @@ export async function POST(request: Request) {
     },
     now,
   );
+  await recordLoginRisk(db, session.id, actor, now);
 
   const response = html
     ? NextResponse.redirect(new URL("/applications", cfg.appOrigin), 303)

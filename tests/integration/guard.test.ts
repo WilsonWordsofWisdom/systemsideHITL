@@ -9,12 +9,14 @@ import {
   hitlTickets,
   rateLimits,
   requestLog,
+  sessionEvents,
   sessions,
 } from "@/lib/db/schema";
 import type { AppDb } from "@/lib/db/types";
 import { getClassifierConfig, classifyActor } from "@/lib/hitl/classifier";
 import { TICKET_USER_LIMIT, hitlGuard, type GuardInput } from "@/lib/hitl/guard";
 import { getPolicy } from "@/lib/hitl/policy";
+import { clientContextHash } from "@/lib/hitl/inputs";
 import { approveTicket } from "@/lib/hitl/tickets";
 import { JourneyError, createDraft, submitApplication, updateDraft } from "@/lib/journey/service";
 import { DEMO_USER_ID } from "@/scripts/seed";
@@ -428,5 +430,123 @@ describe("logging (L1)", () => {
       input(fresh, { action: "update_contact", body: { phone: "+1 555 0100" } }),
     );
     expect(g.actor).toMatchObject({ class: "suspected_agent", sticky: true });
+  });
+});
+
+describe("session handover (T10a-c, FR35-FR38)", () => {
+  const humanSnapshot = {
+    webdriver: false,
+    pointerMoves: 40,
+    clicks: 2,
+    keys: 9,
+    untrusted: 0,
+    msOnPage: 9000,
+  };
+  const browserRequest = () =>
+    new Request(`${ORIGIN}/api/account/contact`, { method: "POST", headers: BROWSER_HEADERS });
+  const riskOf = async (id: string) =>
+    (await db.select().from(sessions).where(eq(sessions.id, id)))[0].riskState;
+  const eventsOf = (id: string) =>
+    db.select().from(sessionEvents).where(eq(sessionEvents.sessionId, id));
+
+  it("T10a: human to undetected agent: high-risk actions stay gated, contact change gated not denied", async () => {
+    const s = await session({
+      signinMethod: "passkey",
+      loginActorClass: "human",
+      clientCtxHash: clientContextHash(browserRequest(), SECRET),
+    });
+    await db.insert(clientSignals).values({ sessionId: s.id, payload: humanSnapshot });
+    const contact = await hitlGuard(
+      input(s, { action: "update_contact", body: { phone: "+1 555 0100" } }),
+    );
+    expect(contact.actor.class).toBe("human");
+    expect(contact.kind).toBe("gated");
+    expect(await riskOf(s.id)).toBe("clean");
+  });
+
+  it("agent evidence after a human-leaning login escalates to handover_suspected", async () => {
+    const s = await session({ signinMethod: "passkey", loginActorClass: "human" });
+    await db.insert(clientSignals).values({ sessionId: s.id, payload: { webdriver: true } });
+    await hitlGuard(input(s, { action: "create_draft" }));
+    expect(await riskOf(s.id)).toBe("handover_suspected");
+    const [event] = await eventsOf(s.id);
+    expect(event).toMatchObject({
+      event: "risk_changed",
+      fromState: "clean",
+      toState: "handover_suspected",
+      trigger: "agent_after_human_login",
+    });
+  });
+
+  it("T10b: agent to human: the session stays above clean and contact changes stay denied", async () => {
+    const s = await session();
+    await db.insert(clientSignals).values({ sessionId: s.id, payload: { webdriver: true } });
+    await hitlGuard(input(s, { action: "create_draft" }));
+    expect(await riskOf(s.id)).toBe("agent_observed");
+
+    // The human takes over in the same session: behaviour now looks human.
+    await db.delete(clientSignals).where(eq(clientSignals.sessionId, s.id));
+    await db.insert(clientSignals).values({ sessionId: s.id, payload: humanSnapshot });
+    const [fresh] = await db.select().from(sessions).where(eq(sessions.id, s.id));
+    const g = await hitlGuard(
+      input(fresh, { action: "update_contact", body: { phone: "+1 555 0100" } }),
+    );
+    expect(g.actor).toMatchObject({ class: "suspected_agent", sticky: true });
+    expect(g.kind).toBe("denied");
+    expect(await riskOf(s.id)).toBe("agent_observed");
+  });
+
+  it("T10c: a cookie copied into a script is flagged and the gate holds", async () => {
+    const s = await session({
+      signinMethod: "passkey",
+      loginActorClass: "human",
+      clientCtxHash: clientContextHash(browserRequest(), SECRET),
+    });
+    await db.insert(clientSignals).values({ sessionId: s.id, payload: humanSnapshot });
+    const id = await completeDraft();
+    // Same cookie, different client: a script with its own user agent.
+    const g = await hitlGuard(
+      input(s, {
+        resourceId: id,
+        headers: {
+          "user-agent": "python-requests/2.32",
+          "accept-language": "",
+          "sec-fetch-site": "",
+        },
+      }),
+    );
+    expect(g.kind).toBe("gated");
+    expect(g.actor.class).toBe("suspected_agent");
+    expect(await riskOf(s.id)).toBe("handover_suspected");
+    const [event] = await eventsOf(s.id);
+    expect(event).toMatchObject({
+      trigger: "client_context_changed",
+      toState: "handover_suspected",
+    });
+    const [row] = await logsFor(s.id);
+    expect(row.actorSignals).toMatchObject({
+      riskChange: { from: "clean", to: "handover_suspected", trigger: "client_context_changed" },
+    });
+  });
+
+  it("the escalation applies to the request that caused it", async () => {
+    // Context change alone scores 30, below the suspect threshold; the new risk
+    // state makes this same request a suspected agent, so the contact change is denied.
+    const s = await session({
+      signinMethod: "passkey",
+      loginActorClass: "human",
+      clientCtxHash: clientContextHash(browserRequest(), SECRET),
+    });
+    await db.insert(clientSignals).values({ sessionId: s.id, payload: humanSnapshot });
+    const g = await hitlGuard(
+      input(s, {
+        action: "update_contact",
+        body: { phone: "+1 555 0100" },
+        headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0.0.0 Safari/537.36" },
+      }),
+    );
+    expect(g.actor.contributions).toMatchObject({ client_context_changed: 30 });
+    expect(g.actor.class).toBe("suspected_agent");
+    expect(g.kind).toBe("denied");
   });
 });

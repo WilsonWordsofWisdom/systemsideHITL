@@ -7,6 +7,7 @@ import {
   ORIGIN,
   PASSWORD,
   addAuthenticator,
+  removeAuthenticators,
   enrolPasskey,
   handoffTicket,
   testDb,
@@ -25,7 +26,10 @@ test.beforeAll(async ({ browser }) => {
   await addAuthenticator(phone);
   await enrolPasskey(phone);
 });
-test.afterAll(async () => phoneContext.close());
+test.afterAll(async () => {
+  await removeAuthenticators();
+  await phoneContext.close();
+});
 
 async function approveOnPhone(origin: string, ticket: string) {
   await phone.goto(`${origin}/approve/${ticket}`);

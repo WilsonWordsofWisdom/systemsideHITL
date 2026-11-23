@@ -1,7 +1,7 @@
 // hitlGuard: the single decision and enforcement point (spec section 8, controls
 // C1-C4, S10, L1). Every mutating journey route and, in Phase 4, every MCP tool
 // calls it before the action runs. Every call writes a request_log row.
-import type { SessionRow } from "../auth/session";
+import { escalateRisk, nextRiskState, type SessionRow } from "../auth/session";
 import type { AppDb } from "../db/types";
 import { clientIp, ipHash } from "../http";
 import { logEvent } from "../log";
@@ -24,6 +24,10 @@ import {
   type RedeemFailure,
   type Ticket,
 } from "./tickets";
+
+// Tiers that are evidence from the request itself, as opposed to a class carried
+// over from earlier in the session (escalate-only, architecture 4.7).
+const FRESH_EVIDENCE_TIERS: ReadonlySet<string> = new Set(["A", "B", "score"]);
 
 // Ticket creation limits (control T9, FR23).
 export const TICKET_USER_LIMIT: LimitRule = { max: 20, windowSec: 60, lockSec: 60 };
@@ -96,23 +100,51 @@ export async function hitlGuard(
   const policy = deps.policy();
   const ip = ipHash(clientIp(request), input.secret);
 
-  // Classify; any failure fails closed (control C3).
+  // Classify, then raise the session's risk state on fresh evidence (architecture
+  // 4.9 layers 2-3). Any failure fails closed (control C3).
   let actor: Classification;
   let classifierFailed = false;
+  let risk: { from: string; to: string; trigger: string } | null = null;
   try {
     const cfg = deps.classifierConfig();
-    actor = deps.classify(
-      await requestClassifierInput({
-        db,
-        request,
-        session,
-        route: input.route,
-        cfg,
-        secret: input.secret,
-        now,
-      }),
+    const classifierInput = await requestClassifierInput({
+      db,
+      request,
+      session,
+      route: input.route,
       cfg,
-    );
+      secret: input.secret,
+      now,
+    });
+    actor = deps.classify(classifierInput, cfg);
+    const next = nextRiskState(session.riskState, {
+      agentEvidence: FRESH_EVIDENCE_TIERS.has(actor.tier),
+      humanLeaningLogin: session.loginActorClass === "human",
+      contextChanged: classifierInput.clientContextChanged,
+    });
+    if (next) {
+      const changed = await escalateRisk(
+        db,
+        session.id,
+        next.to,
+        next.trigger,
+        {
+          class: actor.class,
+          tier: actor.tier,
+          score: actor.score,
+          contributions: actor.contributions,
+        },
+        now,
+      );
+      if (changed) {
+        risk = { ...changed, trigger: next.trigger };
+        // The escalation counts for this request too, not only the next one.
+        actor = deps.classify(
+          { ...classifierInput, session: { ...classifierInput.session, riskState: changed.to } },
+          cfg,
+        );
+      }
+    }
   } catch {
     classifierFailed = true;
     actor = FAILED_CLASSIFICATION("unavailable");
@@ -143,6 +175,7 @@ export async function hitlGuard(
         facts: actor.facts,
         weightsVersion: actor.weightsVersion,
         sticky: actor.sticky,
+        riskChange: risk,
         action: input.action,
         mode: input.mode,
       },

@@ -1,9 +1,18 @@
 // J12 passkey enrolment and J01 passkey sign-in, using Chrome's virtual
 // WebAuthn authenticator (test mode only, control W8).
 import { expect, test } from "@playwright/test";
-import { DEMO, addAuthenticator, enrolPasskey, expectSignedIn, signIn, testDb } from "./helpers";
+import {
+  DEMO,
+  addAuthenticator,
+  removeAuthenticators,
+  enrolPasskey,
+  expectSignedIn,
+  signIn,
+  testDb,
+} from "./helpers";
 
 test.describe.configure({ mode: "serial" });
+test.afterEach(removeAuthenticators);
 
 test("enrol a passkey, then sign in with it; other sessions end", async ({ page, browser }) => {
   // A second browser signed in with the password: its session must end when the
