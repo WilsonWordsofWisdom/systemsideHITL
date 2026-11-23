@@ -1,0 +1,31 @@
+# HITL policy (spec section 7, architecture 7.1). Loaded once at boot, read-only.
+# Design change from the spec: there is no `default: allow`. Only actions listed
+# under `read_only` are allowed without an entry; any other unlisted action is
+# denied at runtime (control C4), and a test fails if a mutating route has no entry.
+version: 1
+
+read_only:
+  - list_applications
+  - get_application
+  - get_contact
+  - get_journey_state
+  - get_approval_status
+
+actions:
+  create_draft: { human: allow, declared_agent: allow, suspected_agent: allow, unknown: allow }
+  update_draft: { human: allow, declared_agent: allow, suspected_agent: allow, unknown: allow }
+  attach_document: { human: allow, declared_agent: allow, suspected_agent: allow, unknown: allow }
+  submit_application: { human: gate, declared_agent: gate, suspected_agent: gate, unknown: gate }
+  pay_fee: { human: gate, declared_agent: gate, suspected_agent: gate, unknown: gate }
+  update_contact: { human: gate, declared_agent: deny, suspected_agent: deny, unknown: gate }
+  delete_application: { human: gate, declared_agent: gate, suspected_agent: deny, unknown: gate }
+
+# Actions where a classifier failure becomes `deny` rather than `gate` (control C3).
+critical:
+  - update_contact
+
+gate:
+  ttl_seconds: 600
+  methods: [passkey, device]
+  # 0 = always gate. Kept for the spec's test variant; not used by the guard yet.
+  human_fresh_auth_skip_seconds: 0

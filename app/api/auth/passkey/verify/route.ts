@@ -7,23 +7,39 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { appConfig } from "@/lib/app";
 import { getSessionSecret, sha256Hex } from "@/lib/auth/crypto";
-import { SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth/current";
+import { APPROVAL_COOKIE, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth/current";
 import { createSession, revokeOtherSessions, revokeSession } from "@/lib/auth/session";
 import { consumeChallenge, fromBase64Url } from "@/lib/auth/webauthn";
 import { passkeys } from "@/lib/db/schema";
 import { getDb } from "@/lib/db/server";
 import { clientIp, ipHash, isSameOrigin } from "@/lib/http";
 import { logEvent } from "@/lib/log";
+import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/hitl/classifier";
+import { clientContextHash, loginClassifierInput, recordLoginRisk } from "@/lib/hitl/inputs";
+import { TICKET_ID_PATTERN } from "@/lib/hitl/tickets";
 import { headerFacts, parseSignals } from "@/lib/signals";
 
 const Body = z.object({
   challengeId: z.string().min(1).max(100),
   response: z.object({ id: z.string().min(1).max(1024) }).passthrough(),
   signals: z.string().max(4000).optional(),
+  // "approval": sign in on /approve/[ticketId] for an approval-only session.
+  mode: z.enum(["signin", "approval"]).optional(),
+  ticketId: z.string().max(100).optional(),
 });
 
-// Passkey sign-in with user verification required (FR6). A successful passkey
-// sign-in ends the user's other sessions and starts a clean one (control S9).
+function cookieValue(request: Request, name: string) {
+  return request.headers
+    .get("cookie")
+    ?.split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
+// Passkey sign-in with user verification required (FR6). On /login it ends the
+// user's other sessions and starts a clean one (control S9). In approval mode it
+// starts an approval-only session under its own cookie and ends nothing (W11).
 export async function POST(request: Request) {
   const { appOrigin, rpId } = appConfig();
   if (!isSameOrigin(request, appOrigin)) {
@@ -87,31 +103,50 @@ export async function POST(request: Request) {
     .set({ counter: verification.authenticationInfo.newCounter })
     .where(eq(passkeys.id, stored.id));
 
-  const previous = request.headers
-    .get("cookie")
-    ?.split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith(`${SESSION_COOKIE}=`))
-    ?.slice(SESSION_COOKIE.length + 1);
+  const approval = parsed.data.mode === "approval";
+  const cookieName = approval ? APPROVAL_COOKIE : SESSION_COOKIE;
+  // Rotate only the cookie this sign-in replaces (control S1).
+  const previous = cookieValue(request, cookieName);
   if (previous) await revokeSession(db, sha256Hex(previous), "rotated", now);
 
   const client = parseSignals(parsed.data.signals);
+  // Passkey with UV is human-leaning only when the score is low (architecture 4.7 rule 4).
+  const actor = classifyActor(
+    loginClassifierInput(request, {
+      signinMethod: "passkey",
+      selfDeclared: false,
+      snapshot: client,
+    }),
+    getClassifierConfig(),
+  );
   const { token, session } = await createSession(
     db,
     {
       userId: stored.userId,
       signinMethod: "passkey",
-      // Until Phase 2's classifier: a passkey sign-in with no automation flag is
-      // treated as human-leaning (architecture 4.7 rule 4), otherwise unknown.
-      loginActorClass: client && client.webdriver === false ? "human" : "unknown",
-      loginSignals: { client, headers: headerFacts(request), userAgent },
-      clientCtxHash: sha256Hex(`${userAgent}|${ip}`),
+      approvalOnly: approval,
+      loginActorClass: actor.class,
+      loginSignals: {
+        client,
+        headers: headerFacts(request),
+        userAgent,
+        classification: loginClassification(actor),
+      },
+      clientCtxHash: clientContextHash(request, secret),
     },
     now,
   );
-  await revokeOtherSessions(db, stored.userId, session.id, "passkey_reset", now);
+  await recordLoginRisk(db, session.id, actor, now);
+  if (!approval) await revokeOtherSessions(db, stored.userId, session.id, "passkey_reset", now);
 
-  const response = NextResponse.json({ ok: true, redirect: "/applications" });
-  response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(appOrigin));
+  // The return path is built here, never taken from the client (control T7).
+  const ticketId = parsed.data.ticketId ?? "";
+  const redirect = approval
+    ? TICKET_ID_PATTERN.test(ticketId)
+      ? `/approve/${ticketId}`
+      : "/"
+    : "/applications";
+  const response = NextResponse.json({ ok: true, redirect });
+  response.cookies.set(cookieName, token, sessionCookieOptions(appOrigin));
   return response;
 }

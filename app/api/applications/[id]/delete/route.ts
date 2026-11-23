@@ -6,6 +6,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/application
   const { id } = await ctx.params;
   return journeyAction(request, {
     action: "delete_application",
+    resourceId: id,
     errorPath: `/applications/${id}/delete`,
     run: async ({ db, userId }) => {
       await deleteApplication(db, userId, id);

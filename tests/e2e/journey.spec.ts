@@ -1,8 +1,20 @@
-// J01-J04 journey without the gate (Phase 1), navigability (FR28) and isolation (C5).
+// J01-J04 journey through the gate (Phase 2), navigability (FR28) and isolation (C5).
+// The Playwright browser reports navigator.webdriver, so it signs in as a
+// suspected agent: submit and pay are gated, delete and contact changes denied.
 import { expect, test, type Page } from "@playwright/test";
-import { DEMO, ORIGIN, expectSignedIn, signIn } from "./helpers";
+import {
+  DEMO,
+  ORIGIN,
+  addAuthenticator,
+  removeAuthenticators,
+  approveWithPasskey,
+  enrolPasskey,
+  handoffTicket,
+  signIn,
+} from "./helpers";
 
 test.describe.configure({ mode: "serial" });
+test.afterEach(removeAuthenticators);
 const SECOND_APP = "00000000-0000-4000-8000-000000000201";
 
 // Every journey page: one h1, labelled controls, the step indicator, a next-step
@@ -21,11 +33,13 @@ async function expectNavigable(page: Page) {
   expect(unlabelled).toEqual([]);
 }
 
-test("complete the permit journey: draft, details, document, review, declare, pay", async ({
+test("complete the permit journey: draft, details, document, review, declare, pay, each gated step approved", async ({
   page,
 }) => {
-  await signIn(page, DEMO.email);
-  await expectSignedIn(page, DEMO.name);
+  // The account holder's passkey lives in this browser's virtual authenticator.
+  await addAuthenticator(page);
+  await enrolPasskey(page);
+  await page.goto("/applications");
   await expectNavigable(page);
   await expect(page.getByRole("link", { name: "Summer Street Fair" })).toBeVisible();
 
@@ -63,11 +77,36 @@ test("complete the permit journey: draft, details, document, review, declare, pa
     .check();
   await page.getByRole("button", { name: "Submit application" }).click();
 
-  await expect(page).toHaveURL(/\/pay$/);
+  // Gated: the form is replaced by the handoff panel and nothing is submitted.
+  await expect(page).toHaveURL(/\/declare\?ticket=hitl_/);
+  await expectNavigable(page);
+  const submitTicket = await handoffTicket(page, "submit_application");
+  const id = page.url().split("/apply/")[1].split("/")[0];
+  expect(
+    (await page.request.get(`/api/applications/${id}`).then((r) => r.json())).application.status,
+  ).toBe("draft");
+
+  const csrf = await page.locator('meta[name="csrf-token"]').getAttribute("content");
+  await approveWithPasskey(page, submitTicket);
+  const retry = await page.request.post(`/api/applications/${id}/submit`, {
+    headers: { origin: ORIGIN, "x-csrf-token": csrf!, "x-hitl-ticket": submitTicket },
+    data: { declaration: "on" },
+  });
+  expect(retry.status()).toBe(200);
+
+  await page.goto(`/apply/${id}/pay`);
   await expectNavigable(page);
   await page.getByRole("button", { name: "Pay $50 (mock payment)" }).click();
+  await expect(page).toHaveURL(/\/pay\?ticket=hitl_/);
+  const payTicket = await handoffTicket(page, "pay_fee");
+  await approveWithPasskey(page, payTicket);
+  const paid = await page.request.post(`/api/applications/${id}/pay`, {
+    headers: { origin: ORIGIN, "x-csrf-token": csrf!, "x-hitl-ticket": payTicket },
+    data: {},
+  });
+  expect(paid.status()).toBe(200);
 
-  await expect(page).toHaveURL(/\/applications\/[0-9a-f-]+\?paid=1$/);
+  await page.goto(`/applications/${id}?paid=1`);
   await expectNavigable(page);
   await expect(page.getByRole("main").getByRole("status")).toContainText("Payment received");
   await expect(page.getByText("Paid", { exact: true })).toBeVisible();
@@ -88,25 +127,33 @@ test("submitting an incomplete draft is refused with a clear message", async ({ 
   );
 });
 
-test("delete an application after confirming on its own page", async ({ page }) => {
+test("deletion is confirmed on its own page and refused to a suspected agent", async ({ page }) => {
   await signIn(page, DEMO.email);
   await page.getByRole("link", { name: "Winter Lights Walk" }).click();
   await page.getByRole("link", { name: "Delete application" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Delete this application?");
   await expectNavigable(page);
   await page.getByRole("button", { name: "Delete application" }).click();
-  await expect(page).toHaveURL(/\/applications\?deleted=1$/);
-  await expect(page.getByRole("link", { name: "Winter Lights Walk" })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/delete\?error=denied_delete_application$/);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "The account holder must delete this application",
+  );
+  await page.goto("/applications");
+  await expect(page.getByRole("link", { name: "Winter Lights Walk" })).toBeVisible();
 });
 
-test("change the recovery contact details", async ({ page }) => {
+test("a suspected agent can't change the recovery contact details (J03)", async ({ page }) => {
   await signIn(page, DEMO.email);
   await page.getByRole("link", { name: "Contact details" }).click();
   await expect(page.locator("h1")).toHaveCount(1);
+  const before = await page.getByLabel("Recovery email").inputValue();
   await page.getByLabel("Recovery email").fill("new@example.test");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("main").getByRole("status")).toHaveText("Contact details saved");
-  await expect(page.getByLabel("Recovery email")).toHaveValue("new@example.test");
+  await expect(page).toHaveURL(/\/account\/contact\?error=denied_update_contact$/);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "The account holder must make this change",
+  );
+  await expect(page.getByLabel("Recovery email")).toHaveValue(before);
 });
 
 test("another user's application is not found, by page and by API", async ({ page }) => {

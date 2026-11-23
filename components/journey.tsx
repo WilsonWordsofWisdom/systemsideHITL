@@ -118,6 +118,47 @@ const ERRORS: Record<string, { title: string; body: string }> = {
   },
   not_found: { title: "Application not found", body: "It may have been deleted." },
   too_large: { title: "That file is too large", body: "Upload a file of 2 MB or less." },
+  // Guard outcomes (design.md 4.5).
+  denied_update_contact: {
+    title: "The account holder must make this change",
+    body: "Recovery email and phone can't be changed by an automated assistant. The account holder can change them after signing in.",
+  },
+  denied_delete_application: {
+    title: "The account holder must delete this application",
+    body: "This session can't delete applications. The account holder can delete it after signing in.",
+  },
+  rate_limited: {
+    title: "Too many approval requests",
+    body: "Too many approval requests were made in a short time. Try again in a minute.",
+  },
+  ticket_not_approved: {
+    title: "This step hasn't been approved yet",
+    body: "The account holder needs to approve it first.",
+  },
+  ticket_rejected: {
+    title: "The request was declined",
+    body: "Submitting again creates a new request.",
+  },
+  ticket_expired: {
+    title: "The approval expired",
+    body: "Approvals last 10 minutes. Submitting again creates a new request.",
+  },
+  ticket_consumed: {
+    title: "This approval has already been used",
+    body: "Submitting again creates a new request.",
+  },
+  ticket_payload_mismatch: {
+    title: "The request changed after it was approved",
+    body: "Submitting again creates a new request for the current version.",
+  },
+  ticket_wrong_session: {
+    title: "This approval belongs to another session",
+    body: "Submitting again creates a new request.",
+  },
+  ticket_not_found: {
+    title: "Approval not found",
+    body: "Submitting again creates a new request.",
+  },
 };
 
 export function ErrorNotice({ code }: { code?: string | string[] }) {

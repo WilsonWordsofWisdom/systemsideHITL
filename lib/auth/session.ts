@@ -116,6 +116,81 @@ export async function validateSession(
   return { ...row, lastSeenAt: now };
 }
 
+// Session risk state (architecture 4.9 layer 3, controls A9, FR35). Escalate-only:
+// clean -> agent_observed -> handover_suspected, never back down. A human takes a
+// session back only by a fresh passkey sign-in, which starts a new clean session.
+export type RiskState = SessionRow["riskState"];
+const RISK_ORDER: Record<RiskState, number> = {
+  clean: 0,
+  agent_observed: 1,
+  handover_suspected: 2,
+};
+
+export interface RiskEvidence {
+  // Agent evidence from this request itself (tiers A-D), not carried over.
+  agentEvidence: boolean;
+  // The session was established with a human-leaning (passkey) login.
+  humanLeaningLogin: boolean;
+  // The session is used from a different client context than at sign-in (A8).
+  contextChanged: boolean;
+}
+
+// The state this evidence moves the session to, or null if it stays put.
+export function nextRiskState(
+  current: RiskState,
+  e: RiskEvidence,
+): { to: RiskState; trigger: string } | null {
+  if (current === "handover_suspected") return null;
+  if (e.contextChanged) return { to: "handover_suspected", trigger: "client_context_changed" };
+  if (e.agentEvidence && current === "clean") {
+    return e.humanLeaningLogin
+      ? { to: "handover_suspected", trigger: "agent_after_human_login" }
+      : { to: "agent_observed", trigger: "agent_evidence" };
+  }
+  return null;
+}
+
+// Raises a live session's risk state and records the change. A request can never
+// lower it: the update only matches rows currently below the target state.
+export async function escalateRisk(
+  db: AppDb,
+  sessionId: string,
+  to: RiskState,
+  trigger: string,
+  signals: Record<string, unknown> = {},
+  now = new Date(),
+): Promise<{ from: RiskState; to: RiskState } | null> {
+  const [row] = await db
+    .select({ riskState: sessions.riskState, revokedAt: sessions.revokedAt })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .limit(1);
+  if (!row || row.revokedAt || RISK_ORDER[row.riskState] >= RISK_ORDER[to]) return null;
+  const [changed] = await db
+    .update(sessions)
+    .set({ riskState: to })
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        eq(sessions.riskState, row.riskState),
+        isNull(sessions.revokedAt),
+      ),
+    )
+    .returning({ id: sessions.id });
+  // Another request escalated it first; its event records that change.
+  if (!changed) return null;
+  await db.insert(sessionEvents).values({
+    sessionId,
+    ts: now,
+    event: "risk_changed",
+    fromState: row.riskState,
+    toState: to,
+    trigger,
+    signals,
+  });
+  return { from: row.riskState, to };
+}
+
 // CSRF token bound to the session (control S2). Stateless: derived with HMAC.
 export function csrfTokenFor(sessionId: string, secret: string): string {
   return hmacBase64Url(secret, `csrf:${sessionId}`);

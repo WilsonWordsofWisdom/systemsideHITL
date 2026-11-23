@@ -6,6 +6,15 @@ import { getCurrentSession } from "../auth/current";
 import { verifyCsrf } from "../auth/session";
 import type { AppDb } from "../db/types";
 import { getDb } from "../db/server";
+import { gateStatus, handoffMode } from "../flags";
+import { hitlGuard, type GuardResult } from "../hitl/guard";
+import {
+  STEP_UP_HEADER,
+  continueUrl,
+  deniedBody,
+  gatedBody,
+  ticketInvalidBody,
+} from "../hitl/response";
 import { isSameOrigin, readBody, wantsHtml } from "../http";
 import { JOURNEY_ERROR_STATUS, JourneyError } from "./service";
 
@@ -31,6 +40,8 @@ export async function journeyAction(
   request: Request,
   opts: {
     action: string;
+    // The application the action targets, part of the approval binding (FR17).
+    resourceId?: string | null;
     run: (ctx: ActionContext) => Promise<ActionResult>;
     // Where a form is sent back to on error, with ?error=<code>.
     errorPath: string;
@@ -83,18 +94,40 @@ export async function journeyAction(
   }
   delete body.csrf;
 
+  const db = getDb();
+  let finish: ((o: "executed" | "error", reason?: string) => Promise<void>) | undefined;
   try {
+    // The guard decides before anything runs (control C1). Only an `ok` lets the
+    // action through; gated, denied and invalid-ticket results return here.
+    const guard = await hitlGuard({
+      db,
+      request,
+      route: html ? "web" : "api",
+      userId: current.user.id,
+      session: current.session,
+      action: opts.action,
+      resourceId: opts.resourceId ?? null,
+      body,
+      secret: getSessionSecret(),
+      mode: cfg.hitlMode,
+      ttlSeconds: cfg.ticketTtlSeconds,
+    });
+    if (guard.kind !== "ok") return guardResponse(guard, opts, html, cfg.appOrigin, back);
+    finish = guard.finish;
+
     const result = await opts.run({
-      db: getDb(),
+      db,
       userId: current.user.id,
       sessionId: current.session.id,
       body,
       formData,
     });
+    await finish("executed");
     if (html)
       return NextResponse.redirect(new URL(result.redirect ?? "/applications", cfg.appOrigin), 303);
     return NextResponse.json(result.json ?? { ok: true });
   } catch (err) {
+    await finish?.("error", err instanceof JourneyError ? err.code : "exception");
     if (err instanceof JourneyError) {
       return html
         ? back(err.code)
@@ -104,6 +137,45 @@ export async function journeyAction(
           );
     }
     throw err;
+  }
+}
+
+function guardResponse(
+  guard: Exclude<GuardResult, { kind: "ok" }>,
+  opts: { action: string; errorPath: string },
+  html: boolean,
+  appOrigin: string,
+  back: (code: string) => NextResponse,
+) {
+  switch (guard.kind) {
+    case "gated": {
+      if (html) {
+        // Redirect mode sends the browser to the approval page; the URL is built
+        // here from APP_ORIGIN and the ticket ID only (FR26, T7).
+        if (handoffMode() === "redirect") {
+          return NextResponse.redirect(continueUrl(appOrigin, guard.ticket.id), 303);
+        }
+        // Otherwise the step page shows the handoff panel for this ticket.
+        const url = new URL(opts.errorPath, appOrigin);
+        url.searchParams.set("ticket", guard.ticket.id);
+        return NextResponse.redirect(url, 303);
+      }
+      return NextResponse.json(gatedBody(guard.ticket, appOrigin), {
+        status: gateStatus(),
+        headers: { "WWW-Authenticate": STEP_UP_HEADER },
+      });
+    }
+    case "denied":
+      if (html)
+        return back(guard.reason === "rate_limited" ? "rate_limited" : `denied_${opts.action}`);
+      return NextResponse.json(deniedBody(opts.action, guard.reason), {
+        status: guard.reason === "rate_limited" ? 429 : 403,
+      });
+    case "ticket_invalid":
+      if (html) return back(`ticket_${guard.reason}`);
+      return NextResponse.json(ticketInvalidBody(opts.action, guard.ticketId, guard.reason), {
+        status: 409,
+      });
   }
 }
 

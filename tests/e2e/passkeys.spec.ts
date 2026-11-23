@@ -1,34 +1,18 @@
 // J12 passkey enrolment and J01 passkey sign-in, using Chrome's virtual
 // WebAuthn authenticator (test mode only, control W8).
-import { expect, test, type Page } from "@playwright/test";
-import { DEMO, expectSignedIn, signIn, testDb } from "./helpers";
+import { expect, test } from "@playwright/test";
+import {
+  DEMO,
+  addAuthenticator,
+  removeAuthenticators,
+  enrolPasskey,
+  expectSignedIn,
+  signIn,
+  testDb,
+} from "./helpers";
 
 test.describe.configure({ mode: "serial" });
-
-async function addAuthenticator(page: Page) {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("WebAuthn.enable");
-  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
-    options: {
-      protocol: "ctap2",
-      transport: "internal",
-      hasResidentKey: true,
-      hasUserVerification: true,
-      isUserVerified: true,
-      automaticPresenceSimulation: true,
-    },
-  });
-  return { cdp, authenticatorId };
-}
-
-async function enrolPasskey(page: Page) {
-  await signIn(page, DEMO.email);
-  await expectSignedIn(page, DEMO.name);
-  await page.goto("/account/passkeys");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Passkeys");
-  await page.getByRole("button", { name: "Add a passkey" }).click();
-  await expect(page.getByRole("main").getByRole("status")).toHaveText("Passkey added.");
-}
+test.afterEach(removeAuthenticators);
 
 test("enrol a passkey, then sign in with it; other sessions end", async ({ page, browser }) => {
   // A second browser signed in with the password: its session must end when the
@@ -58,8 +42,9 @@ test("enrol a passkey, then sign in with it; other sessions end", async ({ page,
     const [session] = await sql`select signin_method, login_actor_class from sessions
       where revoked_at is null order by created_at desc limit 1`;
     expect(session.signin_method).toBe("passkey");
-    // Playwright sets navigator.webdriver, so the login class is not "human".
-    expect(session.login_actor_class).toBe("unknown");
+    // Playwright sets navigator.webdriver, so the classifier scores the passkey
+    // sign-in as a suspected agent rather than human (architecture 4.7).
+    expect(session.login_actor_class).toBe("suspected_agent");
     const [reset] =
       await sql`select count(*)::int as n from sessions where revoke_reason = 'passkey_reset'`;
     expect(reset.n).toBeGreaterThanOrEqual(1);

@@ -17,6 +17,8 @@ import {
   lockedUntil,
   recordFailure,
 } from "@/lib/ratelimit";
+import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/hitl/classifier";
+import { clientContextHash, loginClassifierInput, recordLoginRisk } from "@/lib/hitl/inputs";
 import { headerFacts, parseSignals } from "@/lib/signals";
 
 const LoginForm = z.object({
@@ -83,24 +85,31 @@ export async function POST(request: Request) {
 
   const selfDeclared = selfDeclareUiOn() && parsed.data.self_declare === "on";
   const userAgent = request.headers.get("user-agent") ?? "";
-  const { token } = await createSession(
+  const client = parseSignals(parsed.data.signals);
+  // Same classifier as every request (architecture 4.3); stored as the login class.
+  const actor = classifyActor(
+    loginClassifierInput(request, { signinMethod: "password", selfDeclared, snapshot: client }),
+    getClassifierConfig(),
+  );
+  const { token, session } = await createSession(
     db,
     {
       userId: user.id,
       signinMethod: "password",
       declaredAgent: selfDeclared,
-      // Full classification arrives in Phase 2; until then only self-declaration counts.
-      loginActorClass: selfDeclared ? "declared_agent" : "unknown",
+      loginActorClass: actor.class,
       loginSignals: {
         selfDeclared,
-        client: parseSignals(parsed.data.signals),
+        client,
         headers: headerFacts(request),
         userAgent: userAgent.slice(0, 300),
+        classification: loginClassification(actor),
       },
-      clientCtxHash: sha256Hex(`${userAgent}|${ip}`),
+      clientCtxHash: clientContextHash(request, secret),
     },
     now,
   );
+  await recordLoginRisk(db, session.id, actor, now);
 
   const response = html
     ? NextResponse.redirect(new URL("/applications", cfg.appOrigin), 303)

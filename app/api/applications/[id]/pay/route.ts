@@ -6,6 +6,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/application
   const { id } = await ctx.params;
   return journeyAction(request, {
     action: "pay_fee",
+    resourceId: id,
     errorPath: `/apply/${id}/pay`,
     run: async ({ db, userId }) => {
       const application = await payFee(db, userId, id);

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HandoffPanel, loadHandoff } from "@/components/handoff";
 import { CsrfField, ErrorNotice, JourneyLayout, NextStep, Notice, btn } from "@/components/journey";
 import { loadOwnApplication } from "@/lib/journey/page";
 import { FEE } from "@/lib/journey/service";
@@ -7,7 +8,9 @@ import { FEE } from "@/lib/journey/service";
 export default async function PayPage({ params, searchParams }: PageProps<"/apply/[id]/pay">) {
   const { id } = await params;
   const query = await searchParams;
-  const { app, csrf } = await loadOwnApplication(id);
+  const current = await loadOwnApplication(id);
+  const { app, csrf } = current;
+  const handoff = await loadHandoff(query.ticket, current);
 
   return (
     <JourneyLayout step="pay">
@@ -21,7 +24,8 @@ export default async function PayPage({ params, searchParams }: PageProps<"/appl
         </Notice>
       )}
       {app.status === "paid" && <Notice tone="success" title="The fee has been paid" />}
-      {app.status === "submitted" && (
+      {app.status === "submitted" && handoff && <HandoffPanel ticket={handoff} csrf={csrf} />}
+      {app.status === "submitted" && !handoff && (
         <form action={`/api/applications/${app.id}/pay`} method="post" className="space-y-4">
           <CsrfField csrf={csrf} />
           <p>

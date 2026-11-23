@@ -1,0 +1,49 @@
+# Classifier weights and thresholds (architecture 4.7). Draft values, to be tuned
+# on the observe baseline run and then frozen (FR15). Bump `version` on any change;
+# it is recorded with every classification.
+version: draft-1
+
+thresholds:
+  suspect: 50 # score at or above this is suspected_agent
+  clear: 20 # a passkey session needs a score below this to be called human
+
+# Behaviour signals are scored over this sliding window; a quiet window is no evidence.
+window_seconds: 60
+
+weights:
+  webdriver: 50
+  untrusted_events: 30
+  no_pointer_before_click: 20
+  fast_completion: 20 # first input to submit under fast_completion_ms
+  regular_timing: 15 # inter-event standard deviation under regular_timing_sd_ms
+  missing_browser_headers: 15
+  agent_ua_token: 40
+  client_context_changed: 30
+  no_prior_page_view: 10
+
+fast_completion_ms: 2000
+regular_timing_sd_ms: 5
+regular_timing_min_events: 5
+
+# Case-insensitive substrings of the User-Agent that name automation or agent clients.
+agent_ua_tokens:
+  - HeadlessChrome
+  - Playwright
+  - Puppeteer
+  - Selenium
+  - python-requests
+  - python-httpx
+  - aiohttp
+  - curl/
+  - Wget/
+  - node-fetch
+  - undici
+  - axios/
+  - Go-http-client
+  - GPTBot
+  - ChatGPT-User
+  - OAI-SearchBot
+  - ClaudeBot
+  - Claude-User
+  - PerplexityBot
+  - Perplexity-User

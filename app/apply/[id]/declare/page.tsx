@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HandoffPanel, loadHandoff } from "@/components/handoff";
 import { CsrfField, ErrorNotice, JourneyLayout, NextStep, Notice, btn } from "@/components/journey";
 import { loadOwnApplication } from "@/lib/journey/page";
 
@@ -10,7 +11,9 @@ export default async function DeclarePage({
 }: PageProps<"/apply/[id]/declare">) {
   const { id } = await params;
   const query = await searchParams;
-  const { app, csrf } = await loadOwnApplication(id);
+  const current = await loadOwnApplication(id);
+  const { app, csrf } = current;
+  const handoff = await loadHandoff(query.ticket, current);
 
   return (
     <JourneyLayout step="declare">
@@ -22,6 +25,8 @@ export default async function DeclarePage({
             Go to payment
           </Link>
         </Notice>
+      ) : handoff ? (
+        <HandoffPanel ticket={handoff} csrf={csrf} />
       ) : (
         <form action={`/api/applications/${app.id}/submit`} method="post" className="space-y-4">
           <CsrfField csrf={csrf} />

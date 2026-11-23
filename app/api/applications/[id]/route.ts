@@ -15,6 +15,7 @@ export async function DELETE(request: Request, ctx: RouteContext<"/api/applicati
   const { id } = await ctx.params;
   return journeyAction(request, {
     action: "delete_application",
+    resourceId: id,
     errorPath: `/applications/${id}/delete`,
     run: async ({ db, userId }) => {
       await deleteApplication(db, userId, id);
