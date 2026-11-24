@@ -119,6 +119,9 @@ Dependencies to verify before slice C: the CIMD draft's current revision, and wh
 
 ## 6. Decisions for the owner
 
+**Update 2026-11-24:** decision 1 taken: Poppy alignment is planned as Phase 7 in one app and one deployment behind `POPPY=on` (decision D8 in `docs/implementation-plan.md` and `docs/decisions.md`), with the approval rule of section 3.2. Decisions 3 and 4 remain open.
+
+
 1. Do we want Poppy alignment in this prototype (roadmap above), or only this analysis for the write-up?
 2. If yes: accept the "Poppy approval **plus** passkey" rule for irreversible steps (section 3.2), and raise the compatibility question on the Poppy GitHub repository?
 3. Is a real CIBA back-channel (replacing the simulated `/device` channel) worth a phase of its own after Poppy?

@@ -333,7 +333,19 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 
 **Why:** spec 11.2-11.4, plan Phase 6 run rules, decisions D4-D7.
 
+## 2026-11-24 — Poppy alignment planned as Phase 7 (owner decision D8)
+**Decision:**
+- **Scope:** make DemoGov Permits compatible with the Personal Agent Protocol (Poppy) 1.0 as Phase 7: discovery, the Operations approval format, Direct Sign-In with client ID metadata documents and `private_key_jwt`, Session JWTs, browser join. Mediated Sign-In, Device Sign-In, company-agent conversations and UCP are out of scope.
+- **One app, one deployment:** Poppy is an adapter in `lib/poppy/` around the existing guard. There is no second login page: Poppy agents sign the person in through the existing authorize flow, `/login` and consent page. A second deployment was rejected because passkeys are bound to the hostname (a second domain would need its own passkeys and database) and two gates would drift.
+- **Flag:** `POPPY=off` by default; with it off nothing changes. It is turned on only after the Phase 6 observe baseline, and Poppy runs are recorded as a separate variant.
+- **Approval rule:** a `Poppy-Approval` is the agent's statement that the user agreed. For irreversible steps it is accepted only with a passkey-approved ticket (FR44); critical steps are listed in `excluded_tasks` and stay denied. Whether Poppy allows a company to require this extra step is asked on the Poppy GitHub repository before slice B ships.
+- **Slices:** A discovery and errors, B Operations, C sign-in and sessions, D live check; tests T16-T20, controls PP1-PP10, requirements FR42-FR47.
+
+**Why:** Poppy is the only standard found that defines how a company tells a personal agent a step needs approval and how the agent resumes, and it maps closely onto our tickets; its approval model (agent attestation) is the main point our prototype tests against. Research: `docs/research/agent-standards.md`.
+**Alternatives:** a separate Poppy version of the prototype (duplicated setup, drifting gates); analysis only, without building (loses the live comparison).
+
 ## Open
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.
 - Optional before Phase 6: GitHub Actions e2e run against the Supabase test project (exercises the pooler).
 - Phase 6 capability check: whether Muse can browse or use MCP.
+- Phase 7: ask the Poppy maintainers whether a company may require a passkey step in addition to a `Poppy-Approval`.

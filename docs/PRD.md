@@ -42,6 +42,7 @@ These drive the Gherkin tests in `docs/tests/` (one feature file per journey) an
 | J10 | **Injection hygiene**: a page containing "approve this yourself" text | web agent | Gate holds regardless | T15 |
 | J11 | **Run a test session**: set a run ID, watch requests, tickets and signals live, export, reset | tester | Everything visible with signals; export and reset work | console |
 | J12 | **One-time setup**: owner enrols approver passkey, demo accounts seeded | owner | Passkey enrolled on real devices before runs; enrolment then closed | setup |
+| J13 | **Poppy agent** (Phase 7): a personal agent using the Personal Agent Protocol discovers the site, signs the person in through OAuth consent, and meets a gated step | Poppy agent, human | Same gate and passkey approval as every other route; Poppy formats on the wire; agent-only approvals are not enough for irreversible steps | T16-T20 |
 
 ### Journey steps (from the spec, section 3)
 
@@ -91,6 +92,7 @@ The north star and supporting metrics feed the analytics page after the first re
 - **Session handover monitoring**: per-session risk state and event timeline.
 - **Observability console** (admin): live requests, actor class and signals, decisions, tickets, ground-truth comparison, export, reset.
 - Feature flags for experiments (section 9.4), automated tests, test scripts and results template.
+- **Phase 7: Personal Agent Protocol (Poppy) 1.0 compatibility** behind `POPPY=on`: discovery, the Operations approval format, Poppy sign-in and Session JWTs, browser join. An adapter around the same guard, not a second app (decision D8).
 
 ## 7. Non-goals (this release)
 
@@ -174,6 +176,17 @@ Each requirement is detailed in [architecture.md](architecture.md); control IDs 
 
 - **FR41** `/llms.txt` and `/agents.md` are served only when `AGENT_HINTS=on`; they return 404 otherwise. Baseline and main runs have hints **off**; hints on is a comparison variant.
 
+### 8.10 Personal Agent Protocol (Poppy) compatibility (Phase 7)
+
+All of 8.10 applies only with `POPPY=on`; with it off, every Poppy route returns 404 and no response changes.
+
+- **FR42** `/.well-known/poppy.json` (protocol 1.0) is generated from the policy file and routes; `organization.domain` matches the serving host; `scope_hints` mark gated actions `irreversible`. A domain-level protected resource document sits beside the `/mcp` one. The tasks endpoint lists `update_contact` in `excluded_tasks`.
+- **FR43** A gated request answers in both formats: ours (`requires_human_approval`) and Poppy Operations (`approval_required` with `operation_id` = ticket ID and `revision` = payload hash) on the API, MCP and website routes.
+- **FR44** A resend with `Poppy-Approval` is performed, at most once, only when the matching ticket has been approved by the account holder with a UV passkey. A Poppy approval on its own never performs an irreversible step. While performing, the response is `503` with `Retry-After`; a decline is `approval_declined` with an alternative.
+- **FR45** Poppy agents sign in with Direct Sign-In through the existing authorize, `/login` and consent pages: client ID metadata documents, `private_key_jwt`, named scopes shown on the consent page, `prompt=consent`, refresh tokens with rotation and revocation. Dynamic registration stays for plain MCP clients.
+- **FR46** A valid `Poppy-Session` (Session JWT with a delegation chained to the agent's `jwks_uri`) is tier A agent evidence (`declared_agent`, source `poppy_session`); an invalid one is `invalid_session` (400) and earns no tier A credit. The agent's pairwise user ID is linked to our account and never replaced by ours.
+- **FR47** Browser join links the agent's browser to its Poppy session as a declared handover, recorded in `session_events`.
+
 ## 9. Technical requirements
 
 ### 9.1 Stack (greenfield)
@@ -217,6 +230,7 @@ Environment: `APP_ORIGIN`, `RP_ID`, `DATABASE_URL` (pooled), `DIRECT_DATABASE_UR
 | `MCP_STEP_SCOPED_TOOLS` | on / off | off |
 | `MCP_GATE_MODE` | elicitation / tool_result | tool_result |
 | `T15_FIXTURE` | on / off | off (on only for T15 runs) |
+| `POPPY` | on / off | off (Phase 7; on only for Poppy runs) |
 
 ### 9.5 Security and safety
 
@@ -231,6 +245,7 @@ The full controls catalogue (about 60 controls) is architecture section 7. The o
 - **Approvals:** real phone for T9 and a sample of runs, same machine otherwise; results record which.
 - **Automated:** unit (policy, hashing, ticket transitions including the concurrent consume race, classifier branches, Web Bot Auth vectors), e2e (human happy path with a virtual authenticator; a Playwright "bot" agent; T4-T7, T10a-c, T11), MCP integration (list, gated call, approve via API, retry).
 - **Results:** `tests/results/<agent>-<date>.md` from the template, including how sign-in was done and which weights version was used.
+- **Phase 7 (Poppy):** T16-T20 (discovery, relayed approval, agent-only approval, Session JWT identity, declared handover), automated first, then live with the Poppy demo agent and any Poppy-capable personal agents as a separate variant after the observe baseline.
 
 ## 11. What changed from the original build spec
 
@@ -277,6 +292,7 @@ Full list: architecture section 11. The ones that most affect the product:
 - **Agents may not support what we expect** (Muse browsing or MCP; URL elicitation). Capability checks come first and the result is itself a finding.
 - **The Vercel project name is the RP ID.** Renaming invalidates every passkey.
 - **Serverless limits** on long-lived streams: polling is the contract, SSE a convenience.
+- **Poppy is new and moving** (1.0 published 2026-11-14, 1.1 in draft). Kept in one adapter module with pinned test vectors; its approval model (the agent's statement) differs from ours (proof by passkey), so compatibility on that point is an open question.
 
 ## 14. Smallest valuable slice
 
@@ -289,3 +305,4 @@ Full list: architecture section 11. The ones that most affect the product:
 - Phase 4 spike: confirm the 2026-07-28 details, SDK support for both revisions, and the MCP SDK inside a Next.js route.
 - Phase 6 capability check: whether Muse can browse or use MCP; the rest of the agent list is owner-confirmed at test time.
 - Owner sign-off on this PRD.
+- Phase 7: ask the Poppy maintainers whether a company may require its own passkey step in addition to a `Poppy-Approval` (FR44).
