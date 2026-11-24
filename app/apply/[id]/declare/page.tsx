@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { HandoffPanel, loadHandoff } from "@/components/handoff";
+import { InjectionNotice } from "@/components/injection-notice";
 import { CsrfField, ErrorNotice, JourneyLayout, NextStep, Notice, btn } from "@/components/journey";
 import { loadOwnApplication } from "@/lib/journey/page";
 
@@ -18,6 +19,7 @@ export default async function DeclarePage({
   return (
     <JourneyLayout step="declare">
       <h1 className="mb-4 text-[28px] leading-9">Declaration</h1>
+      <InjectionNotice />
       <ErrorNotice code={query.error} />
       {app.status !== "draft" ? (
         <Notice tone="info" title="This application has been submitted">
