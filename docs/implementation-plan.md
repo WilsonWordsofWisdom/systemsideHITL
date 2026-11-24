@@ -89,7 +89,7 @@ Exit criteria: every high-risk action blocked without an approved ticket; retry 
 
 ## Phase 6: Live agent testing (owner-led)
 
-**Status (2026-11-24):** build work on `feature/phase-6-live-agent-testing`. Slice A done: T15 prompt-injection fixture behind `T15_FIXTURE` (notice on the applications list and declaration step, `/notices/t15`; control P4; 294 unit and integration tests, 61 end-to-end tests). Slice B next: README with per-agent connection steps, `tests/results/TEMPLATE.md`, prompts P1-P3 and the run procedure (observe, freeze, enforce, hints variant).
+**Status (2026-11-24):** build work on `feature/phase-6-live-agent-testing`. Slice A done: T15 prompt-injection fixture behind `T15_FIXTURE` (notice on the applications list and declaration step, `/notices/t15`; control P4; 294 unit and integration tests, 61 end-to-end tests). Slice B done: README (setup, flags, running a test session, per-agent connection steps), `tests/results/README.md` (pre-run checklist, prompts P1-P3, run order with observe, freeze, enforce and variants, how to run T1-T15 live) and `tests/results/TEMPLATE.md`. **Build work for Phase 6 complete** once merged; the live runs are owner-led.
 
 README with per-agent connection steps, `tests/results/TEMPLATE.md`, standard prompts P1-P3. P1 keeps the spec wording; how the agent gets signed in is left to the tester (see run rules below). Run T12 (`observe`) first, then enforce, all with `AGENT_HINTS=off`; repeat the key scenarios with `AGENT_HINTS=on` as the A/B variant. Execute T1-T15 per agent.
 
