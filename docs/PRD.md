@@ -216,6 +216,7 @@ Environment: `APP_ORIGIN`, `RP_ID`, `DATABASE_URL` (pooled), `DIRECT_DATABASE_UR
 | `PASSKEY_ENROLMENT` | open / closed | closed during runs |
 | `MCP_STEP_SCOPED_TOOLS` | on / off | off |
 | `MCP_GATE_MODE` | elicitation / tool_result | tool_result |
+| `T15_FIXTURE` | on / off | off (on only for T15 runs) |
 
 ### 9.5 Security and safety
 

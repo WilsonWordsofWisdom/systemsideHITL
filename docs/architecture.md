@@ -385,7 +385,7 @@ Every security control and check implemented on the system side. Nothing is buil
 | P1 | No imperative instructions aimed at models in any served page, API message or MCP tool description | all content | Text lint test over pages and tool descriptions (Phases 1, 4) |
 | P2 | `message_for_user` is declarative and addressed to the human | gate responses | Unit test on response builders (Phase 2) |
 | P3 | No secrets, tokens or personal data in agent-visible content or error messages | response builders | Review checklist + test on error shapes (Phase 2) |
-| P4 | Prompt-injection fixture (T15) isolated behind its own flag, off by default | fixture route | Test that it 404s when off (Phase 6) |
+| P4 | Prompt-injection fixture (T15) isolated behind its own flag (`T15_FIXTURE`), off by default | `lib/injection-fixture.ts`, `/notices/t15` | Unit test that the wording exists in one module only; e2e that it 404s when off and that the gate holds when the bot follows it (Phase 6) |
 
 ### 7.8 Data, secrets and platform
 

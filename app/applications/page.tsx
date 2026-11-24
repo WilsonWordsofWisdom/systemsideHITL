@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { InjectionNotice } from "@/components/injection-notice";
 import {
   CsrfField,
   ErrorNotice,
@@ -24,6 +25,7 @@ export default async function ApplicationsPage({ searchParams }: PageProps<"/app
   return (
     <JourneyLayout step="applications">
       <h1 className="mb-4 text-[28px] leading-9">Your applications</h1>
+      <InjectionNotice />
       <ErrorNotice code={params.error} />
       {params.deleted === "1" && <Notice tone="success" title="Application deleted" />}
 
