@@ -4,13 +4,21 @@ import { appConfig } from "@/lib/app";
 import { getSessionSecret } from "@/lib/auth/crypto";
 import { validRunId } from "@/lib/console/run";
 import { getDb } from "@/lib/db/server";
-import { mcpGateMode, mcpStepScopedTools } from "@/lib/flags";
+import { mcpGateMode, mcpStepScopedTools, poppyOn } from "@/lib/flags";
 import { legacyClientInfo, readMcpMessage } from "@/lib/mcp/request";
 import { ensureMcpSession } from "@/lib/mcp/session";
-import { buildMcpServer, logMcpRequest, stepScopedTools, type McpCaller } from "@/lib/mcp/tools";
+import {
+  MCP_TOOLS,
+  buildMcpServer,
+  logMcpRequest,
+  stepScopedTools,
+  type McpCaller,
+} from "@/lib/mcp/tools";
 import { getClient } from "@/lib/oauth/clients";
 import { verifyAccessToken } from "@/lib/oauth/grants";
 import { oauthUrls } from "@/lib/oauth/metadata";
+import { grants, scopeForAction } from "@/lib/oauth/scopes";
+import { sessionError, verifyPoppySession } from "@/lib/poppy/session";
 
 export const dynamic = "force-dynamic";
 
@@ -52,18 +60,34 @@ async function serve(request: Request) {
   const token = /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim();
   if (!token) return unauthorized(cfg.appOrigin, false);
   const u = oauthUrls(cfg.appOrigin);
+  // With POPPY=on, a Poppy sign-in without `resource` covers the whole domain.
   const verified = await verifyAccessToken(db, token, {
     secret,
     issuer: u.issuer,
-    resource: u.resource,
+    resource: poppyOn() ? [u.resource, cfg.appOrigin] : u.resource,
   });
   if (!verified) return unauthorized(cfg.appOrigin, true);
+
+  // A Poppy Session header is verified on every request that carries one (Poppy
+  // 5.3, FR46): a failure is 400 invalid_session, never 401.
+  const poppySession = poppyOn()
+    ? await verifyPoppySession(db, request, {
+        origin: cfg.appOrigin,
+        token: { value: token, clientId: verified.clientId, userId: verified.userId },
+      })
+    : null;
+  if (poppySession && !poppySession.ok) {
+    const res = sessionError(poppySession);
+    for (const [k, v] of Object.entries(CORS)) res.headers.set(k, v);
+    return res;
+  }
 
   const client = await getClient(db, verified.clientId);
   const session = await ensureMcpSession(db, {
     secret,
     clientId: verified.clientId,
-    clientName: client?.name ?? verified.clientId,
+    clientName:
+      client?.name ?? (poppySession?.ok ? poppySession.session.agentName : verified.clientId),
     userId: verified.userId,
     tokenExpiresAt: verified.expiresAt,
     // A tester can tag a run by adding ?run=<id> to the MCP server URL (FR40).
@@ -79,6 +103,26 @@ async function serve(request: Request) {
           .catch(() => null)
       : null;
   const msg = readMcpMessage(body);
+  // Scopes (FR45, control PP8): a tool call needs the scope for its action. The
+  // "mcp" scope covers every tool; a tool no offered scope reaches goes on to the
+  // guard, which decides as before.
+  if (msg.method === "tools/call") {
+    const name = (body as { params?: { name?: unknown } } | null)?.params?.name;
+    const def = typeof name === "string" ? MCP_TOOLS[name as keyof typeof MCP_TOOLS] : undefined;
+    const needed = def ? scopeForAction(def.action ?? (name as string)) : null;
+    if (needed && !grants(verified.scope, needed)) {
+      return NextResponse.json(
+        { error: "insufficient_scope" },
+        {
+          status: 403,
+          headers: {
+            ...CORS,
+            "WWW-Authenticate": `Bearer error="insufficient_scope", scope="${needed}", resource_metadata="${u.resourceMetadata}"`,
+          },
+        },
+      );
+    }
+  }
   const caller: McpCaller = {
     db,
     request,
@@ -94,6 +138,9 @@ async function serve(request: Request) {
         ? await legacyClientInfo(db, session.id)
         : msg.client,
     gateMode: mcpGateMode(),
+    poppySession: poppySession?.ok
+      ? { sid: poppySession.session.sid, sub: poppySession.session.sub }
+      : null,
     visibleTools:
       msg.method === "tools/list" && mcpStepScopedTools()
         ? await stepScopedTools(db, verified.userId)

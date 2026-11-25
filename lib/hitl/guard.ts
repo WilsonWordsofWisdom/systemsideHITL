@@ -5,8 +5,9 @@ import { escalateRisk, nextRiskState, type SessionRow } from "../auth/session";
 import type { AppDb } from "../db/types";
 import { runIdFromRequest } from "../console/run";
 import { clientIp, ipHash } from "../http";
-import { logEvent } from "../log";
+import { logEvent, ticketActionOutcome } from "../log";
 import type { McpClientInfo } from "../mcp/request";
+import { revisionFor, type PoppyApproval } from "../poppy/operations";
 import { lockedUntil, recordFailure, type LimitRule } from "../ratelimit";
 import {
   classifyActor,
@@ -47,7 +48,16 @@ export type GuardResult =
     }
   | { kind: "denied"; actor: Classification; reason: "policy" | "rate_limited" }
   | { kind: "gated"; actor: Classification; ticket: Ticket; reused: boolean }
-  | { kind: "ticket_invalid"; actor: Classification; ticketId: string; reason: RedeemFailure };
+  | { kind: "ticket_invalid"; actor: Classification; ticketId: string; reason: RedeemFailure }
+  // Poppy Operations (FR44): an approval for a revision that still needs the
+  // account holder's passkey, and a resend for an operation already performed.
+  | { kind: "approval_declined"; actor: Classification; ticket: Ticket }
+  | {
+      kind: "already_performed";
+      actor: Classification;
+      ticket: Ticket;
+      status: "performed" | "performing" | "failed";
+    };
 
 export interface GuardInput {
   db: AppDb;
@@ -58,7 +68,16 @@ export interface GuardInput {
   // MCP: the OAuth client acting for the user. It is tier A evidence (the token
   // names the client), binds tickets to the client, and the tool name and the
   // client's declared revision and capabilities are logged (control M6).
-  mcp?: { clientId: string; tool: string; client?: McpClientInfo };
+  mcp?: {
+    clientId: string;
+    tool: string;
+    client?: McpClientInfo;
+    // A verified Poppy Session on the request (FR46): tier A as a Poppy agent.
+    poppySession?: { sid: string; sub: string } | null;
+  };
+  // A Poppy Operations approval (Poppy-Approval header or MCP _meta), passed only
+  // when POPPY=on and the request declares the extension (FR43, FR44).
+  poppyApproval?: PoppyApproval | null;
   action: string;
   resourceId: string | null;
   body: Record<string, string>;
@@ -120,8 +139,20 @@ export async function hitlGuard(
     // Tier A: the MCP token names the client; on the web, a valid Web Bot Auth
     // signature marks this one request, even on a human's cookie (A7).
     const protocolAgent = input.mcp
-      ? { source: "mcp_token" as const, agent: input.mcp.clientId }
-      : await deps.webBotAuth(request);
+      ? {
+          source: input.mcp.poppySession ? ("poppy_session" as const) : ("mcp_token" as const),
+          agent: input.mcp.clientId,
+        }
+      : session.signinMethod === "poppy_join"
+        ? // A browser that joined a Poppy agent's session (FR47): declared handover.
+          {
+            source: "poppy_join" as const,
+            agent: String(
+              (session.loginSignals as { poppy?: { clientId?: unknown } }).poppy?.clientId ??
+                "poppy",
+            ),
+          }
+        : await deps.webBotAuth(request);
     const classifierInput = await requestClassifierInput({
       db,
       request,
@@ -196,6 +227,8 @@ export async function hitlGuard(
         action: input.action,
         mode: input.mode,
         ...(input.mcp?.client ? { mcp: input.mcp.client } : {}),
+        ...(input.mcp?.poppySession ? { poppySession: input.mcp.poppySession } : {}),
+        ...(input.poppyApproval ? { poppyApproval: input.poppyApproval } : {}),
       },
       policyDecision: decision,
       ticketId: row.ticketId ?? null,
@@ -235,6 +268,26 @@ export async function hitlGuard(
     }
   }
 
+  // Poppy approval (FR44, control PP3), checked in Poppy's order. 1: the operation
+  // is this session's, else the request is handled as if it had no approval.
+  // 2: an operation already performed is reported as such, before preconditions
+  // that would now fail. 3 (after the snapshot): the revision is the current one
+  // for exactly this request. An X-HITL-Ticket header takes precedence.
+  const approval = ticketId ? null : (input.poppyApproval ?? null);
+  const found = approval ? await getTicket(db, approval.operation_id, now) : null;
+  const op =
+    found &&
+    stateFailure(found, { userId: input.userId, sessionId: session.id }, now) !== "wrong_session"
+      ? found
+      : null;
+  if (op?.state === "consumed") {
+    const outcome = await ticketActionOutcome(db, op.id);
+    const status =
+      outcome === "executed" ? "performed" : outcome === "error" ? "failed" : "performing";
+    await log({ outcome: "blocked", reason: `poppy:${status}`, ticketId: op.id });
+    return { kind: "already_performed", actor, ticket: op, status };
+  }
+
   // Preconditions and the resource snapshot come next, so no ticket is created
   // for an action that could not run (throws JourneyError).
   let built: Awaited<ReturnType<typeof buildSnapshot>>;
@@ -254,6 +307,39 @@ export async function hitlGuard(
     body: input.body,
     snapshot,
   });
+
+  // Poppy check 3. A current revision runs only once the account holder has
+  // approved with a passkey; before that the agent's approval is declined.
+  if (approval && op) {
+    const sameRequest =
+      op.action === input.action && op.resourceId === input.resourceId && op.payloadHash === hash;
+    const live = (op.state === "pending" || op.state === "approved") && op.expiresAt > now;
+    if (sameRequest && live) {
+      if (approval.revision !== revisionFor(op)) {
+        await log({ outcome: "gated", reason: "poppy:revision_replaced", ticketId: op.id });
+        return { kind: "gated", actor, ticket: op, reused: true };
+      }
+      if (op.state === "pending") {
+        await log({ outcome: "blocked", reason: "poppy:agent_only_approval", ticketId: op.id });
+        return { kind: "approval_declined", actor, ticket: op };
+      }
+      const redeemed = await redeemTicket(
+        db,
+        op.id,
+        {
+          userId: input.userId,
+          action: input.action,
+          resourceId: input.resourceId,
+          payloadHash: hash,
+          sessionId: session.id,
+        },
+        now,
+      );
+      if (redeemed.ok) return ok("ticket_consumed", op.id);
+      await log({ outcome: "blocked", reason: `ticket:${redeemed.reason}`, ticketId: op.id });
+      return { kind: "ticket_invalid", actor, ticketId: op.id, reason: redeemed.reason };
+    }
+  }
 
   if (ticketId) {
     const redeemed = await redeemTicket(

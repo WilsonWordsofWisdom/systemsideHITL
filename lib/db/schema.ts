@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uuid,
@@ -19,7 +20,13 @@ export const actorClass = pgEnum("actor_class", [
   "suspected_agent",
   "unknown",
 ]);
-export const signinMethod = pgEnum("signin_method", ["password", "passkey", "oauth_mcp"]);
+export const signinMethod = pgEnum("signin_method", [
+  "password",
+  "passkey",
+  "oauth_mcp",
+  // A Poppy agent's browser joined its Poppy session (Phase 7, FR47).
+  "poppy_join",
+]);
 export const riskState = pgEnum("risk_state", ["clean", "agent_observed", "handover_suspected"]);
 export const applicationStatus = pgEnum("application_status", [
   "draft",
@@ -301,3 +308,86 @@ export const mcpClients = pgTable("mcp_clients", {
   redirectUris: jsonb("redirect_uris").$type<string[]>().notNull().default([]),
   registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
 }).enableRLS();
+
+// Refresh tokens for Poppy agents (Phase 7, FR45, control PP9). Only the SHA-256 is
+// stored. `codeId` names the sign-in they descend from: rotation keeps it, and
+// revoking one revokes the whole family and its access tokens.
+export const oauthRefreshTokens = pgTable(
+  "oauth_refresh_tokens",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeId: text("code_id").notNull(),
+    scope: text("scope").notNull(),
+    resource: text("resource").notNull(),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("oauth_refresh_tokens_code_idx").on(t.codeId)],
+).enableRLS();
+
+// Poppy Sessions seen here (Poppy 1.0 section 5.3, FR46): the user ID and agent ID a
+// Session starts with are kept, and later Session JWTs must match them.
+export const poppySessions = pgTable(
+  "poppy_sessions",
+  {
+    clientId: text("client_id").notNull(),
+    sid: text("sid").notNull(),
+    sub: text("sub").notNull(),
+    agentId: text("agent_id"),
+    createdAt: createdAt(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.clientId, t.sid] })],
+).enableRLS();
+
+// A Poppy agent's opaque user ID for one of our accounts (FR46). Set the first time
+// a Session arrives with an access token; ours is never sent to the agent.
+export const poppyLinks = pgTable(
+  "poppy_links",
+  {
+    clientId: text("client_id").notNull(),
+    sub: text("sub").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.clientId, t.sub] })],
+).enableRLS();
+
+// Seen JWT IDs (Session JWTs and client assertions), kept for their acceptance
+// window so a replay is refused (control PP5, PP7).
+export const poppyJtis = pgTable(
+  "poppy_jtis",
+  {
+    key: text("key").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("poppy_jtis_expiry_idx").on(t.expiresAt)],
+).enableRLS();
+
+// Browser join codes (Poppy 1.0 section 6, FR47). Only the SHA-256 of the code is
+// stored; a code lasts 60 seconds and works once.
+export const poppyJoinCodes = pgTable(
+  "poppy_join_codes",
+  {
+    id: text("id").primaryKey(),
+    cookieHash: text("cookie_hash").notNull(),
+    clientId: text("client_id"),
+    sid: text("sid"),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    codeId: text("code_id"),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    authorizedAt: timestamp("authorized_at", { withTimezone: true }),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [index("poppy_join_codes_expiry_idx").on(t.expiresAt)],
+).enableRLS();

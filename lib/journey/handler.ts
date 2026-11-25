@@ -6,8 +6,8 @@ import { getCurrentSession } from "../auth/current";
 import { verifyCsrf } from "../auth/session";
 import type { AppDb } from "../db/types";
 import { getDb } from "../db/server";
-import { gateStatus, handoffMode } from "../flags";
-import { hitlGuard, type GuardResult } from "../hitl/guard";
+import { gateStatus, handoffMode, poppyOn } from "../flags";
+import { TICKET_USER_LIMIT, hitlGuard, type GuardResult } from "../hitl/guard";
 import {
   STEP_UP_HEADER,
   continueUrl,
@@ -16,6 +16,13 @@ import {
   ticketInvalidBody,
 } from "../hitl/response";
 import { isSameOrigin, readBody, wantsHtml } from "../http";
+import {
+  approvalFromHeader,
+  declaresOperations,
+  declinedBody,
+  operationFor,
+  performedBody,
+} from "../poppy/operations";
 import { JOURNEY_ERROR_STATUS, JourneyError } from "./service";
 
 export interface ActionContext {
@@ -95,6 +102,9 @@ export async function journeyAction(
   delete body.csrf;
 
   const db = getDb();
+  // Poppy Operations format (FR43): only with POPPY=on, for API requests that
+  // declare the extension. Everyone else gets the responses below unchanged.
+  const poppy = !html && poppyOn() && declaresOperations(request);
   let finish: ((o: "executed" | "error", reason?: string) => Promise<void>) | undefined;
   try {
     // The guard decides before anything runs (control C1). Only an `ok` lets the
@@ -111,8 +121,9 @@ export async function journeyAction(
       secret: getSessionSecret(),
       mode: cfg.hitlMode,
       ttlSeconds: cfg.ticketTtlSeconds,
+      poppyApproval: poppy ? approvalFromHeader(request) : null,
     });
-    if (guard.kind !== "ok") return guardResponse(guard, opts, html, cfg.appOrigin, back);
+    if (guard.kind !== "ok") return guardResponse(guard, opts, html, cfg.appOrigin, back, poppy);
     finish = guard.finish;
 
     const result = await opts.run({
@@ -146,6 +157,7 @@ function guardResponse(
   html: boolean,
   appOrigin: string,
   back: (code: string) => NextResponse,
+  poppy = false,
 ) {
   switch (guard.kind) {
     case "gated": {
@@ -160,16 +172,47 @@ function guardResponse(
         url.searchParams.set("ticket", guard.ticket.id);
         return NextResponse.redirect(url, 303);
       }
+      if (poppy) {
+        // Poppy: 403 approval_required with the operation, plus our own fields.
+        return NextResponse.json(
+          {
+            error: "approval_required",
+            operation: operationFor(guard.ticket, appOrigin),
+            ...gatedBody(guard.ticket, appOrigin),
+          },
+          { status: 403 },
+        );
+      }
       return NextResponse.json(gatedBody(guard.ticket, appOrigin), {
         status: gateStatus(),
         headers: { "WWW-Authenticate": STEP_UP_HEADER },
       });
     }
+    case "approval_declined":
+      return NextResponse.json(declinedBody(guard.ticket, appOrigin), { status: 403 });
+    case "already_performed":
+      // At most once (Poppy Operations 6): a resend says it was done, or that it
+      // is still running; it never repeats the action.
+      if (guard.status === "performed") return NextResponse.json(performedBody(guard.ticket));
+      if (guard.status === "performing") {
+        return NextResponse.json(
+          { error: "performing", operation_id: guard.ticket.id },
+          { status: 503, headers: { "Retry-After": "2" } },
+        );
+      }
+      return NextResponse.json(ticketInvalidBody(opts.action, guard.ticket.id, "consumed"), {
+        status: 409,
+      });
     case "denied":
       if (html)
         return back(guard.reason === "rate_limited" ? "rate_limited" : `denied_${opts.action}`);
+      // The guard doesn't report when the lock ends; ticket locks last lockSec (60 s).
       return NextResponse.json(deniedBody(opts.action, guard.reason), {
         status: guard.reason === "rate_limited" ? 429 : 403,
+        headers:
+          guard.reason === "rate_limited"
+            ? { "Retry-After": String(TICKET_USER_LIMIT.lockSec) }
+            : undefined,
       });
     case "ticket_invalid":
       if (html) return back(`ticket_${guard.reason}`);

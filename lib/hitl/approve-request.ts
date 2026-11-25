@@ -10,7 +10,7 @@ import { runIdFromRequest } from "../console/run";
 import { sessions } from "../db/schema";
 import { clientIp, ipHash, isSameOrigin } from "../http";
 import { logEvent } from "../log";
-import { lockedUntil, recordFailure } from "../ratelimit";
+import { lockedUntil, recordFailure, retryAfter } from "../ratelimit";
 import { APPROVE_IP_LIMIT, APPROVE_USER_LIMIT } from "./approval";
 import { getTicket, type Ticket } from "./tickets";
 
@@ -33,9 +33,9 @@ export async function approveContext(
   ticketId: string,
   csrfFromBody?: string,
 ): Promise<{ ok: true; ctx: ApproveContext } | { ok: false; response: NextResponse }> {
-  const fail = (status: number, error: string) => ({
+  const fail = (status: number, error: string, headers?: Record<string, string>) => ({
     ok: false as const,
-    response: NextResponse.json({ error }, { status }),
+    response: NextResponse.json({ error }, { status, headers }),
   });
   const cfg = appConfig();
   if (!isSameOrigin(request, cfg.appOrigin)) return fail(403, "bad_request");
@@ -75,8 +75,11 @@ export async function approveContext(
     }
   };
 
-  if ((await lockedUntil(db, userKey, now)) || (await lockedUntil(db, ipKey, now))) {
-    return fail(429, "rate_limited");
+  const until = (await lockedUntil(db, userKey, now)) ?? (await lockedUntil(db, ipKey, now));
+  if (until) {
+    return fail(429, "rate_limited", {
+      "Retry-After": retryAfter(until, now, APPROVE_USER_LIMIT.lockSec),
+    });
   }
   const ticket = await getTicket(db, ticketId, now);
   if (ticket?.requestingSessionId) {

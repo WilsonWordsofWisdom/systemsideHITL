@@ -63,8 +63,12 @@ export interface BehaviourSnapshot {
 
 export interface ClassifierInput {
   route: "web" | "api" | "mcp";
-  // Tier A: protocol-proven identity (MCP token `act` claim, Web Bot Auth). Phases 4-5.
-  protocolAgent?: { source: "mcp_token" | "web_bot_auth"; agent: string } | null;
+  // Tier A: protocol-proven identity (MCP token `act` claim, Web Bot Auth, a
+  // verified Poppy Session JWT, or a browser that joined a Poppy session). Phases 4-7.
+  protocolAgent?: {
+    source: "mcp_token" | "web_bot_auth" | "poppy_session" | "poppy_join";
+    agent: string;
+  } | null;
   // Tier B: the sign-in checkbox or an X-Agent header.
   selfDeclared: boolean;
   xAgent: string | null;
@@ -75,7 +79,7 @@ export interface ClassifierInput {
   noPriorPageView: boolean;
   clientContextChanged: boolean;
   session: {
-    signinMethod: "password" | "passkey" | "oauth_mcp";
+    signinMethod: "password" | "passkey" | "oauth_mcp" | "poppy_join";
     loginActorClass: ActorClassName;
     riskState: "clean" | "agent_observed" | "handover_suspected";
   };

@@ -3,9 +3,10 @@
 // error is shown on our own page and never redirected (no open redirect).
 // After that, errors go back to the registered redirect URI.
 import type { AppDb } from "../db/types";
-import { getClient, type McpClient } from "./clients";
+import { redirectMatches, resolveClient, type OAuthClient } from "./clients";
 import { validChallenge } from "./grants";
 import { MCP_SCOPE, oauthUrls } from "./metadata";
+import { parseScopes } from "./scopes";
 
 export interface AuthorizeParams {
   response_type?: string;
@@ -16,6 +17,7 @@ export interface AuthorizeParams {
   state?: string;
   scope?: string;
   resource?: string;
+  prompt?: string;
 }
 
 export const AUTHORIZE_PARAM_NAMES = [
@@ -27,6 +29,7 @@ export const AUTHORIZE_PARAM_NAMES = [
   "state",
   "scope",
   "resource",
+  "prompt",
 ] as const;
 
 export type AuthorizeCheck =
@@ -34,7 +37,7 @@ export type AuthorizeCheck =
   | { kind: "redirect_error"; url: string }
   | {
       kind: "ok";
-      client: McpClient;
+      client: OAuthClient;
       redirectUri: string;
       state: string | null;
       codeChallenge: string;
@@ -69,9 +72,9 @@ export async function checkAuthorizeRequest(
   origin: string,
 ): Promise<AuthorizeCheck> {
   const u = oauthUrls(origin);
-  const client = await getClient(db, p.client_id);
+  const client = await resolveClient(db, p.client_id);
   if (!client) return { kind: "fatal", message: "This application isn't registered." };
-  if (!p.redirect_uri || !client.redirectUris.includes(p.redirect_uri)) {
+  if (!p.redirect_uri || !redirectMatches(client, p.redirect_uri)) {
     return {
       kind: "fatal",
       message: "The return address doesn't match the registered application.",
@@ -90,6 +93,24 @@ export async function checkAuthorizeRequest(
     return fail("unsupported_response_type", "Only response_type=code is supported.");
   if (p.code_challenge_method !== "S256" || !validChallenge(p.code_challenge)) {
     return fail("invalid_request", "PKCE with code_challenge_method=S256 is required.");
+  }
+  if (client.kind === "poppy") {
+    // Poppy agents name the scopes they need (Poppy 4.7). A sign-in without
+    // `resource` covers the whole domain; one with it covers that service only.
+    const scopes = parseScopes(p.scope);
+    if (!scopes) return fail("invalid_scope", "Ask for one or more of the scopes this site lists.");
+    if (p.resource && p.resource !== origin && p.resource !== u.resource) {
+      return fail("invalid_target", "Unknown resource.");
+    }
+    return {
+      kind: "ok",
+      client,
+      redirectUri: p.redirect_uri,
+      state,
+      codeChallenge: p.code_challenge!,
+      scope: scopes.join(" "),
+      resource: p.resource ?? origin,
+    };
   }
   if (p.resource && p.resource !== u.resource) return fail("invalid_target", "Unknown resource.");
   const scopes = (p.scope ?? MCP_SCOPE).split(" ").filter(Boolean);

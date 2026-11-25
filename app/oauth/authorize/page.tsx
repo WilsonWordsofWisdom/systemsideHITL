@@ -3,6 +3,8 @@ import { CsrfField, Notice, btn } from "@/components/journey";
 import { appConfig } from "@/lib/app";
 import { getCurrentSession } from "@/lib/auth/current";
 import { getDb } from "@/lib/db/server";
+import { getPolicy } from "@/lib/hitl/policy";
+import { POPPY_SCOPES, scopeHints } from "@/lib/oauth/scopes";
 import {
   AUTHORIZE_PARAM_NAMES,
   checkAuthorizeRequest,
@@ -39,6 +41,75 @@ export default async function AuthorizePage({ searchParams }: PageProps<"/oauth/
   }
 
   const returnHost = new URL(check.redirectUri).host;
+  const form = (
+    <form action="/api/oauth/authorize" method="post" className="flex flex-wrap gap-3">
+      <CsrfField csrf={current.csrf} />
+      {AUTHORIZE_PARAM_NAMES.map((name) =>
+        params[name] ? <input key={name} type="hidden" name={name} value={params[name]} /> : null,
+      )}
+      <button type="submit" name="decision" value="allow" className={btn.filled}>
+        Allow access
+      </button>
+      <button type="submit" name="decision" value="deny" className={btn.outlined}>
+        Deny
+      </button>
+    </form>
+  );
+
+  // A Poppy personal agent (Phase 7, FR45, control PP8): the agent, its domain, a
+  // warning, and every scope it will get in plain language, flagged when it can
+  // make irreversible changes or reaches personal data.
+  if (check.client.kind === "poppy") {
+    const hints = scopeHints(getPolicy());
+    const agentHost = new URL(check.client.clientId).host;
+    return (
+      <div className="max-w-xl">
+        <p className="mb-6 rounded-xl bg-info-container px-6 py-3 text-on-info-container">
+          You are signing in on <strong>{new URL(origin).host}</strong>
+        </p>
+        <h1 className="mb-4 text-[28px] leading-9">
+          {check.client.name} wants to connect to your DemoGov Permits account
+        </h1>
+        <p className="mb-4">
+          <strong>{check.client.name}</strong> ({agentHost}) is an automated assistant. Continue
+          only if you just asked it to connect. It will act as <strong>{current.user.name}</strong>{" "}
+          with these permissions:
+        </p>
+        <ul
+          className="mb-4 rounded-xl border border-outline-variant bg-white"
+          aria-label="Permissions"
+        >
+          {check.scope.split(" ").map((scope) => (
+            <li key={scope} className="border-b border-outline-variant px-6 py-3 last:border-0">
+              <p>{POPPY_SCOPES[scope]}</p>
+              {(hints[scope]?.changes === "irreversible" || hints[scope]?.personal_data) && (
+                <p className="text-sm text-on-surface-variant">
+                  {[
+                    hints[scope]?.changes === "irreversible" &&
+                      "Can lead to changes that can't be undone",
+                    hints[scope]?.personal_data && "Uses your personal details",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+        <p className="mb-4">
+          Submitting, paying, changing your recovery details or deleting still needs your approval
+          with your passkey each time, and the assistant is always identified as an automated
+          assistant.
+        </p>
+        <p className="mb-6 text-sm text-on-surface-variant">
+          Access lasts until the assistant disconnects or 30 days pass without use. The assistant
+          will return to <strong>{returnHost}</strong>.
+        </p>
+        {form}
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-xl">
       <p className="mb-6 rounded-xl bg-info-container px-6 py-3 text-on-info-container">
@@ -57,18 +128,7 @@ export default async function AuthorizePage({ searchParams }: PageProps<"/oauth/
       <p className="mb-6 text-sm text-on-surface-variant">
         Access lasts one hour. The application will return to <strong>{returnHost}</strong>.
       </p>
-      <form action="/api/oauth/authorize" method="post" className="flex flex-wrap gap-3">
-        <CsrfField csrf={current.csrf} />
-        {AUTHORIZE_PARAM_NAMES.map((name) =>
-          params[name] ? <input key={name} type="hidden" name={name} value={params[name]} /> : null,
-        )}
-        <button type="submit" name="decision" value="allow" className={btn.filled}>
-          Allow access
-        </button>
-        <button type="submit" name="decision" value="deny" className={btn.outlined}>
-          Deny
-        </button>
-      </form>
+      {form}
     </div>
   );
 }

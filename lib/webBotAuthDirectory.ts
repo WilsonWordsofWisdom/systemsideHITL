@@ -124,37 +124,33 @@ function validJwk(k: unknown): k is Ed25519Jwk {
 
 export type DirectoryFetch = (url: string) => Promise<Ed25519Jwk[]>;
 
-// Fetches and validates a JWK Set; throws on any failure (a discovery failure).
-export const fetchDirectory: DirectoryFetch = (raw) =>
-  new Promise((resolve, reject) => {
+// Fetches a JSON document from a URL another party supplied, with the SSRF guard
+// above: HTTPS on 443 only, every resolved address public, no redirects, a timeout
+// and a size cap. Throws on any failure. Also used for Poppy agent metadata.
+export function fetchPublicJson(
+  raw: string,
+  opts: { accept: string; maxBytes?: number },
+): Promise<{ contentType: string; body: unknown }> {
+  const maxBytes = opts.maxBytes ?? MAX_BYTES;
+  return new Promise((resolve, reject) => {
     const problem = directoryUrlProblem(raw);
     if (problem) return reject(new Error(problem));
     const url = new URL(raw);
     const req = get(
       url,
-      {
-        lookup: publicLookup as never,
-        timeout: TIMEOUT_MS,
-        headers: { accept: `${DIRECTORY_TYPE}, application/json;q=0.5` },
-      },
+      { lookup: publicLookup as never, timeout: TIMEOUT_MS, headers: { accept: opts.accept } },
       (res) => {
         // Any status but 200 is a failure, and redirects are never followed.
         if (res.statusCode !== 200) {
           res.resume();
           return reject(new Error(`status ${res.statusCode}`));
         }
-        const type = (res.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
-        const okType =
-          type === DIRECTORY_TYPE || (url.pathname !== WELL_KNOWN && type === "application/json");
-        if (!okType) {
-          res.resume();
-          return reject(new Error("content_type"));
-        }
+        const contentType = (res.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
         const chunks: Buffer[] = [];
         let size = 0;
         res.on("data", (c: Buffer) => {
           size += c.length;
-          if (size > MAX_BYTES) {
+          if (size > maxBytes) {
             req.destroy(new Error("too_large"));
             return;
           }
@@ -162,11 +158,7 @@ export const fetchDirectory: DirectoryFetch = (raw) =>
         });
         res.on("end", () => {
           try {
-            const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { keys?: unknown };
-            if (!Array.isArray(body.keys) || body.keys.length > MAX_KEYS) {
-              return reject(new Error("not_a_directory"));
-            }
-            resolve(body.keys.filter(validJwk).map(({ kty, crv, x }) => ({ kty, crv, x })));
+            resolve({ contentType, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) });
           } catch {
             reject(new Error("not_json"));
           }
@@ -177,6 +169,21 @@ export const fetchDirectory: DirectoryFetch = (raw) =>
     req.on("timeout", () => req.destroy(new Error("timeout")));
     req.on("error", reject);
   });
+}
+
+// Fetches and validates a JWK Set; throws on any failure (a discovery failure).
+export const fetchDirectory: DirectoryFetch = async (raw) => {
+  const { contentType, body } = await fetchPublicJson(raw, {
+    accept: `${DIRECTORY_TYPE}, application/json;q=0.5`,
+  });
+  const okType =
+    contentType === DIRECTORY_TYPE ||
+    (new URL(raw).pathname !== WELL_KNOWN && contentType === "application/json");
+  if (!okType) throw new Error("content_type");
+  const keys = (body as { keys?: unknown } | null)?.keys;
+  if (!Array.isArray(keys) || keys.length > MAX_KEYS) throw new Error("not_a_directory");
+  return keys.filter(validJwk).map(({ kty, crv, x }) => ({ kty, crv, x }));
+};
 
 export type KeyResolver = (identifier: string, keyid: string) => Promise<Ed25519Jwk | null>;
 

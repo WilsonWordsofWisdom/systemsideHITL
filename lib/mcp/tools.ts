@@ -14,7 +14,7 @@ import { z } from "zod";
 import { hmacBase64Url } from "../auth/crypto";
 import type { SessionRow } from "../auth/session";
 import type { AppDb } from "../db/types";
-import type { McpGateMode } from "../flags";
+import { poppyOn, type McpGateMode } from "../flags";
 import { hitlGuard } from "../hitl/guard";
 import { GATED_MESSAGE, continueUrl, deniedBody, ticketInvalidBody } from "../hitl/response";
 import { getTicket, type Ticket } from "../hitl/tickets";
@@ -32,6 +32,13 @@ import {
   updateDraft,
 } from "../journey/service";
 import { logEvent } from "../log";
+import {
+  approvalFromMeta,
+  declaresOperations,
+  declinedBody,
+  operationFor,
+  performedBody,
+} from "../poppy/operations";
 import { supportsUrlElicitation, type McpClientInfo } from "./request";
 
 export interface McpCaller {
@@ -46,6 +53,8 @@ export interface McpCaller {
   ttlSeconds: number;
   // The revision and capabilities the client declared (control M6).
   client: McpClientInfo;
+  // A verified Poppy Session on this request (Phase 7, FR46), if any.
+  poppySession?: { sid: string; sub: string } | null;
   gateMode: McpGateMode;
   // Step-scoped tools/list (FR33): the tools to list, or null for all of them.
   visibleTools?: ReadonlySet<string> | null;
@@ -195,6 +204,8 @@ async function guarded(
   run: () => Promise<Record<string, unknown>>,
 ) {
   const action = MCP_TOOLS[tool].action!;
+  // Poppy Operations (FR43): with POPPY=on, for requests that declare the extension.
+  const poppy = poppyOn() && declaresOperations(c.request);
   const elicit = c.gateMode === "elicitation" && supportsUrlElicitation(c.client);
   // A 2026-07-28 retry carries the ticket in the verified requestState.
   const waitingOn = ctx.mcpReq.requestState<ApprovalState>()?.ticket;
@@ -213,10 +224,26 @@ async function guarded(
       secret: c.secret,
       mode: c.mode,
       ttlSeconds: c.ttlSeconds,
-      mcp: { clientId: c.clientId, tool, client: c.client },
+      mcp: { clientId: c.clientId, tool, client: c.client, poppySession: c.poppySession },
+      poppyApproval: poppy ? approvalFromMeta(ctx.mcpReq._meta) : null,
     });
   } catch (err) {
     return journeyFailure(err);
+  }
+  if (g.kind === "gated" && poppy) {
+    // Poppy: a tool error carrying the operation, plus our own fields (FR43).
+    return result(
+      { operation: operationFor(g.ticket, c.origin), ...gatedToolBody(g.ticket, c.origin) },
+      true,
+    );
+  }
+  if (g.kind === "approval_declined") return result(declinedBody(g.ticket, c.origin), true);
+  if (g.kind === "already_performed") {
+    if (g.status === "performed") return result(performedBody(g.ticket));
+    if (g.status === "performing") {
+      return result({ error: "performing", operation_id: g.ticket.id }, true);
+    }
+    return result(ticketInvalidBody(action, g.ticket.id, "consumed"), true);
   }
   if (g.kind === "gated") {
     return elicit
@@ -260,8 +287,14 @@ export async function logMcpRequest(c: McpCaller, pathOrTool: string) {
     actorClass: "declared_agent",
     actorSignals: {
       tier: "A",
-      facts: { protocolAgent: { source: "mcp_token", agent: c.clientId } },
+      facts: {
+        protocolAgent: {
+          source: c.poppySession ? "poppy_session" : "mcp_token",
+          agent: c.clientId,
+        },
+      },
       mcp: c.client,
+      ...(c.poppySession ? { poppySession: c.poppySession } : {}),
     },
     policyDecision: "allow",
     outcome: "executed",

@@ -43,6 +43,13 @@
       "when": 1795431707590,
       "tag": "0005_phase4_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795601987709,
+      "tag": "0006_phase7_poppy",
+      "breakpoints": true
     }
   ]
 }

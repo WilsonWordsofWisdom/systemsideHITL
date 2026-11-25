@@ -6,6 +6,7 @@ import {
   applications,
   hitlTickets,
   passkeys,
+  poppyLinks,
   requestLog,
   runs,
   sessions,
@@ -156,6 +157,9 @@ describe("reset demo data (L3)", () => {
     await setRunLabel(db, "r42", { agentLabel: "ChatGPT agent, web" });
     await createDraft(db, DEMO_USER_ID, "Extra draft");
     await db.update(users).set({ phone: "+1 555 0100" }).where(eq(users.id, DEMO_USER_ID));
+    await db
+      .insert(poppyLinks)
+      .values({ clientId: "https://agent.example/c.json", sub: "u1", userId: DEMO_USER_ID });
 
     const removed = await resetDemoData(db);
     expect(removed.sessions).toBeGreaterThan(0);
@@ -165,6 +169,7 @@ describe("reset demo data (L3)", () => {
     expect(await db.select().from(requestLog)).toHaveLength(0);
     expect(await db.select().from(hitlTickets)).toHaveLength(0);
     expect(await db.select().from(sessions)).toHaveLength(0);
+    expect(await db.select().from(poppyLinks)).toHaveLength(0);
     const apps = await db.select().from(applications);
     expect(apps.map((a) => a.title).sort()).toEqual([
       "Autumn Craft Market",

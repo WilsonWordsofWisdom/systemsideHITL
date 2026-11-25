@@ -48,6 +48,13 @@ export async function recordFailure(db: AppDb, key: string, rule: LimitRule, now
   return false;
 }
 
+// Retry-After value in whole seconds for a 429 (RFC 9110 10.2.3): until the lock
+// ends when it is known, otherwise the rule's lock length.
+export function retryAfter(until: Date | null, now: Date, fallbackSec: number): string {
+  const seconds = until ? Math.ceil((until.getTime() - now.getTime()) / 1000) : fallbackSec;
+  return String(Math.max(1, seconds));
+}
+
 export async function clearFailures(db: AppDb, key: string) {
   await db.delete(rateLimits).where(eq(rateLimits.key, key));
 }
