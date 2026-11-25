@@ -16,6 +16,7 @@ flowchart LR
     H[Human browser]
     BA[Browser agent<br/>Route 2]
     MA[MCP agent<br/>Route 1]
+    PA[Poppy personal agent<br/>Phase 7, POPPY=on]
     PH[Approver phone<br/>/device]
   end
 
@@ -29,6 +30,7 @@ flowchart LR
     DEV["/device/[userId]"]
     SSE[SSE events]
     CON["/console (admin)"]
+    POP["lib/poppy adapter<br/>poppy.json, Session JWT,<br/>Operations, browser join"]
 
     subgraph Core["lib/hitl - enforcement core"]
       CL[classifier]
@@ -55,6 +57,10 @@ flowchart LR
   BA --> API
   UI --> API
   MA --> MCP
+  PA --> POP
+  POP --> API
+  POP --> MCP
+  POP -.->|tier A: poppy_session| CL
   API --> G
   MCP --> G
   G --> CL --> WBA --> KD
@@ -164,6 +170,8 @@ In redirect mode an agent in the human's browser lands on the approval page. The
 | `MCP_GATE_MODE` | elicitation / tool_result | tool_result | MCP gate variant |
 | `HITL_GATE_STATUS` | 403 / 401 / 202 | 403 | HTTP status of the gated web response; fixed per run |
 | `PASSKEY_ENROLMENT` | open / closed | closed during runs | stops agents adding their own passkey |
+| `T15_FIXTURE` | on / off | off | T15 prompt-injection notice (control P4) |
+| `POPPY` | on / off | off | Phase 7: Poppy discovery, formats and sign-in (section 4.10) |
 
 ### 4.7 How the final actor class is derived
 
@@ -171,7 +179,7 @@ One function, `classifyActor`, used at sign-in and on every request. Inputs are 
 
 | Tier | Evidence | Forgeable by an agent? | Effect |
 |---|---|---|---|
-| A. Protocol-proven | MCP token `act` claim / agent `client_id`; valid Web Bot Auth signature (key fetched from the agent's directory, verified per RFC 9421, fresh `created`/`expires`, covers `@authority`) | No (needs the agent's private key), but it can be **omitted** | `declared_agent`, confidence high |
+| A. Protocol-proven | MCP token `act` claim / agent `client_id`; valid Web Bot Auth signature (key fetched from the agent's directory, verified per RFC 9421, fresh `created`/`expires`, covers `@authority`); valid Poppy Session JWT with its delegation (Phase 7) | No (needs the agent's private key), but it can be **omitted** | `declared_agent`, confidence high |
 | B. Self-declared | "I'm an AI agent" checkbox, `X-Agent` header | Yes, trivially (just don't send it) | `declared_agent`, confidence low, `self_declared=true` |
 | C. Behavioural score | `signals.js`: webdriver, pointer movement before clicks, time to complete, paste vs typed, timing regularity, `isTrusted` mix, focus patterns | Yes, by an adaptive agent | adds to a 0-100 score |
 | D. Request heuristics | agent UA tokens, missing browser headers, API call with no prior page view, no signals posted | Yes | adds to the same score |
@@ -262,6 +270,34 @@ stateDiagram-v2
 
 **Not solved, by design.** A careful agent in the user's own browser can't be reliably told from the human, and the DBSC and DPoP key-binding schemes don't help here (they stop cookie theft, not a same-browser agent). DBSC is also not yet available on macOS Chrome. The protection is the per-action passkey.
 
+### 4.10 Poppy adapter (Phase 7, planned)
+
+Research: [research/agent-standards.md](research/agent-standards.md); decision D8. The Personal Agent Protocol (Poppy) 1.0 is supported as an **adapter**, not a second app. It adds inputs and outputs around the same guard:
+
+- **In:** a `Poppy-Session` header is verified (Session JWT signed by a delegated key, delegation signed by a key in the agent's `jwks_uri`) and becomes tier A evidence. Agent identity for OAuth comes from a client ID metadata document fetched with the same SSRF guard as Web Bot Auth key directories.
+- **Out:** the guard still returns one `GuardResult`; a second serialiser renders a gate as a Poppy operation (`operation_id` = ticket ID, `revision` = payload hash, `terms`/`summary` from the ticket preview) on the API, MCP and website routes.
+- **Same pages:** Poppy Direct Sign-In goes through the existing `/oauth/authorize`, `/login` and consent page. Approval happens on the existing `/approve` and `/device` pages with the passkey.
+- **Approval rule:** a `Poppy-Approval` is the agent's statement that the user agreed. It is accepted as the resend signal, but an irreversible step runs only when the matching ticket is passkey-approved (FR44). Critical steps are listed in `excluded_tasks` and stay denied for agents.
+- **Flag:** `POPPY=off` leaves all routes and responses unchanged; with it on, non-Poppy agents are still treated exactly as before.
+
+```mermaid
+sequenceDiagram
+  participant PA as Poppy agent
+  participant App as DemoGov (guard)
+  participant H as Account holder
+  PA->>App: GET /.well-known/poppy.json
+  PA->>App: OAuth authorize (prompt=consent)
+  App->>H: /login, then consent page (scopes + hints)
+  H-->>App: allow
+  App-->>PA: code, then tokens (private_key_jwt)
+  PA->>App: POST submit + Poppy-Session + Authorization
+  App-->>PA: 403 approval_required + operation (ticket)
+  PA->>H: relays summary and approval link
+  H->>App: /approve/<ticket> with UV passkey
+  PA->>App: same request + Poppy-Approval
+  App-->>PA: 200, performed once (ticket consumed)
+```
+
 ## 5. Module boundaries
 
 | Module | Responsibility | Depends on | Owns state |
@@ -279,6 +315,7 @@ stateDiagram-v2
 | `lib/log.ts` | Writes `request_log` | db | `request_log` |
 | `app/mcp` | Tool registry, step-scoped listing, gate-mode variants | guard, services | MCP sessions |
 | `app/api/**`, UI | Thin adapters calling services via guard | guard | none |
+| `lib/poppy/*` (Phase 7) | Discovery document, Session JWT and delegation verify, CIMD fetch, Operations serialiser and `Poppy-Approval` parsing, browser join | guard, tickets, oauth, SSRF-guarded fetch | pairwise user links, refresh tokens, `jti` replay cache |
 
 Rule: journey services (create draft, submit, pay, etc.) are plain functions taking an authorised context. Routes and MCP tools are adapters that call `hitlGuard` first, then the service. A lint/unit check asserts that every mutating route and tool references the guard.
 
@@ -416,6 +453,21 @@ Every security control and check implemented on the system side. Nothing is buil
 | B3 | Changes to build, CI and deploy files get explicit human review | process | PR review |
 | B4 | SAST every third PR; post-release security audit | process, per `sop/SECURITY_ASSESSMENT.md` | Scan results in PR |
 | B5 | Tests are never deleted or weakened to make CI pass | process | PR review |
+
+### 7.11 Poppy (Phase 7, planned)
+
+| ID | Control | Enforced in | Verified by |
+|---|---|---|---|
+| PP1 | All Poppy routes return 404 unless `POPPY=on`; with it off no response changes | `lib/poppy`, routes | Unit and e2e (Phase 7 slice A) |
+| PP2 | `poppy.json` `organization.domain` equals the `APP_ORIGIN` host; all URLs HTTPS | discovery | Unit test (slice A) |
+| PP3 | A `Poppy-Approval` alone never performs an irreversible step; the ticket must be passkey-approved, and is consumed at most once | guard, tickets | T17, T18 (slice B) |
+| PP4 | Every gated action yields the same ticket in both response formats | serialisers | Contract test (slice B) |
+| PP5 | Session JWT: `typ`, ES256, `kid` = thumbprint of the delegated key, delegation at most 24 h and signed by a `jwks_uri` key, `htm`/`htu` match, `iat` window, `jti` not replayed, `ath` matches the token; otherwise `invalid_session` 400 and no tier A credit | `lib/poppy/session.ts` | Unit vectors, T19 (slice C) |
+| PP6 | Client ID metadata documents fetched only over HTTPS with the SSRF guard (public addresses, size and time limits, no redirects to other hosts); `client_id` equals the fetched URL | `lib/poppy/cimd.ts` | Unit tests (slice C) |
+| PP7 | `private_key_jwt` assertions: `aud` exactly the issuer, `exp` at most 5 min after `iat`, ES256 and PS384 accepted, `none` and HS256 refused | OAuth AS | Unit tests (slice C) |
+| PP8 | Scopes granted never exceed those requested; consent page lists every scope with its hint | OAuth AS, consent page | Integration test (slice C) |
+| PP9 | Refresh tokens rotate on use and are revocable (RFC 7009); revoking signs the agent out of the account | OAuth AS | Integration test (slice C) |
+| PP10 | Tokens, Session JWTs and join codes are never logged; `Authorization`, `Poppy-Session` and `Cookie` are redacted in `request_log` | `log.ts` | Unit test (slice C) |
 
 ## 8. Failure handling
 

@@ -13,6 +13,7 @@ Derived from `ref/HITL-prototype-build-spec.md` §12. Each step lists its verifi
 | D5 | Phase 5 | Real phone vs same machine | **Decided:** real phone for T9 and a sample of runs, same machine otherwise; results record which |
 | D6 | Phase 1 | How agents sign in | **Decided:** left to the tester per agent; the site provides a login page (password, passkey) and a passkey setup page (approver "2FA"); no second factor at sign-in |
 | D7 | Phase 6 | Run baseline with `AGENT_HINTS` off, then on as an A/B variant | **Decided:** yes, off for baseline and main runs, on as a comparison variant |
+| D8 | Phase 7 | Align with the Personal Agent Protocol (Poppy) 1.0 | **Decided (2026-11-24):** one codebase and one deployment; a Poppy adapter behind `POPPY=on` reusing the existing login, consent, approval and phone pages and the same guard; the passkey stays required for irreversible steps; critical steps stay denied for agents |
 
 All other review decisions (unlisted actions, hash scope, ticket binding, signal window, calibration, MCP revisions, OAuth server, DB connections, baseline run, lifecycle documents) are in `docs/decisions.md` and reflected in the phases below.
 
@@ -101,6 +102,23 @@ Run order and rules:
 5. Muse: first run is a capability check (web browsing, MCP); test the web route, and MCP only if supported.
 6. How each agent gets signed in is up to the tester; record what was done in the results file.
 
+## Phase 7: Poppy alignment (Personal Agent Protocol 1.0)
+
+**Status (2026-11-24):** planned; research in [docs/research/agent-standards.md](research/agent-standards.md), owner decision D8. Starts on its own branch after the Phase 6 observe baseline has been run with `POPPY` absent, so the baseline is not affected.
+
+**Shape.** No second login page and no second deployment. Poppy is an adapter in `lib/poppy/` around the existing guard: new inputs (a verified `Poppy-Session` becomes a tier A identity signal) and new outputs (Poppy's response formats next to ours). Policy, tickets, hashing and passkey approval are unchanged. A Poppy agent signs the person in through the existing OAuth authorize flow, which uses the existing `/login` and consent page. `POPPY=off` (default) leaves every current behaviour and response byte-for-byte unchanged; with `POPPY=on`, agents that do not use Poppy are still treated exactly as before.
+
+**Out of scope:** Mediated Sign-In (retiring 2027-03-17), Device Sign-In, conversations with a company agent, the UCP extension, Poppy 1.1 draft features.
+
+1. **Slice A: discovery and errors (1-2 days).** `POPPY` flag. `/.well-known/poppy.json` generated from `policy/hitl-policy.yaml` and the route list: `organization.domain` from `APP_ORIGIN`, `auth.scopes` and `scope_hints` (`changes`: allowed actions `reversible`, gated actions `irreversible`; `personal_data` for contact), `apis` (OpenAPI document and `/mcp`), `tasks.endpoint`. Domain-level `/.well-known/oauth-protected-resource` (`resource = APP_ORIGIN`) next to the existing `/mcp` one. Tasks endpoint with `update_contact` in `excluded_tasks`, and a feedback endpoint that logs to `request_log`. `Poppy-Version` check (`version_unsupported` 400) on Poppy requests; unknown extensions ignored. `Retry-After` on every 429 (also with the flag off; it is a fix). → verify: unit tests for the document against the spec's field rules (and the Poppy implementation kit's schemas, if published) and the domain-match rule; 404 for every Poppy route with the flag off; the Poppy demo agent validator passes against a variant server or production.
+2. **Slice B: Operations as a second wire format for the gate (2-3 days).** One internal `GuardResult`, two serialisers. With the flag on, a gated response also carries `error: "approval_required"` and an `operation` (`operation_id` = ticket ID, `revision` = payload hash, `terms` and `summary` from the ticket preview, `expires_at`): API 403 JSON, MCP `isError` + `structuredContent.operation`, website `Poppy-Operation` header (`sid`, `ref`) plus the approval endpoint. A resend with `Poppy-Approval` is performed only if the matching ticket is passkey-approved by the account holder; an agent-only approval leaves it pending and returns the operation again. `503` + `Retry-After` while performing; `approval_declined` with `reason` and `alternative`. → verify: T2-T7 rerun in Poppy format; contract test that every gated action yields the same ticket in both formats; T17, T18.
+3. **Slice C: sign-in and sessions (4-5 days).** Client ID metadata documents (CIMD) fetched through the SSRF-guarded fetcher from Phase 5, `private_key_jwt` client assertions (ES256, PS384; `aud` = issuer, `exp` at most 5 min), dynamic registration kept for plain MCP clients. Named scopes (`applications:read`, `applications:write`, `applications:submit`, `payments`, `account:contact`) and `prompt=consent` on the existing consent page. Refresh tokens with rotation and RFC 7009 revocation (migration). Session JWT and delegation verifier (`typ`, ES256, `kid` thumbprint, delegation at most 24 h chained to `jwks_uri`, `htm`/`htu`, `iat` window, `jti` replay cache, `ath`) → classifier tier A source `poppy_session`; `invalid_session` 400 on failure. Pairwise link table (`client_id`, `sub`) → our user (migration). Browser join (`browser_session_endpoint`, one-time code, `__Host-poppy_join`, `poppy:browser-sign-in`) as a declared handover, logged in `session_events`. → verify: unit vectors for the JWT chain (valid, expired delegation, wrong `kid`, wrong `htu`, replayed `jti`); integration test with a reference client; T19, T20; existing OAuth and MCP suites unchanged.
+4. **Slice D: live check (1 day).** Poppy demo agent and any Poppy-capable personal agents against production with `POPPY=on`, P1-P3, as an extra column in the results files. → verify: results file per agent; T16-T20 recorded.
+
+Dependencies: no new packages expected (`jose` covers ES256 and PS384; check before slice C). Two migrations in slice C, applied to production only with owner approval. Open question, raised on the Poppy GitHub repository before slice B ships: whether a company may require its own passkey step in addition to a `Poppy-Approval`.
+
+Technical debt to manage: Poppy is new (1.0 published 2026-11-14, 1.1 in draft), so all of it stays in `lib/poppy/` with pinned test vectors and a spec version constant; the two response formats are kept in step by the contract test; the OAuth additions (refresh, revocation) also serve the MCP route.
+
 ## Test additions (replace spec T10)
 
 | ID | Scenario | Expected |
@@ -112,9 +130,19 @@ Run order and rules:
 
 T10a-c run in Phase 2 with the Playwright bot; T10d in Phase 5; all repeated with live agents in Phase 6.
 
+## Test additions (Phase 7, Poppy)
+
+| ID | Scenario | Expected |
+|---|---|---|
+| T16 | Poppy discovery | With `POPPY=on`, `poppy.json` validates and its domain matches; with it off, every Poppy route is 404 |
+| T17 | Poppy agent hits a gated step and relays the approval | `approval_required` with an operation; account holder approves with a passkey; resend with `Poppy-Approval` performs once |
+| T18 | Poppy agent approves on its own (`approver: "agent"` or `"user"` without a passkey) | Nothing performed; ticket stays pending; logged as an agent-only approval attempt |
+| T19 | Poppy Session JWT identity | Valid chain → `declared_agent` (tier A, `poppy_session`); forged, expired or replayed → `invalid_session` 400 and no tier A credit |
+| T20 | Declared handover by browser join | Joined browser session is linked to the agent's session in `session_events`; compared with detected handover (T10) |
+
 ## Order and parallelism
 
-Phases 0 → 1 → 2 are strictly sequential. Console (3) and MCP (4) both depend only on Phase 2 and can overlap. Phase 5 depends on 2 and 4.
+Phases 0 → 1 → 2 are strictly sequential. Console (3) and MCP (4) both depend only on Phase 2 and can overlap. Phase 5 depends on 2 and 4. Phase 7 depends on 2, 4 and 5; it can be built while Phase 6 live runs continue, but `POPPY` stays absent until the observe baseline is done, and Poppy runs are recorded as a separate variant.
 
 ## Not built (per spec)
 

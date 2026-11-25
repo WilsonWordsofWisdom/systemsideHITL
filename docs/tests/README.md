@@ -18,17 +18,18 @@ Derived from the critical user journeys in [../PRD.md](../PRD.md) section 4. One
 | J10 Injection hygiene | [J10-injection-hygiene.feature](J10-injection-hygiene.feature) | T15 | Phase 2 |
 | J11 Run a test session (console) | [J11-console.feature](J11-console.feature) | console | Phase 3 |
 | J12 One-time setup | [J12-setup-and-enrolment.feature](J12-setup-and-enrolment.feature) | setup | Phase 0-1 |
+| J13 Poppy personal agent | [J13-poppy-agent.feature](J13-poppy-agent.feature) | T16-T20 | Phase 7 |
 
 ## Tags
 
 | Tag | Meaning |
 |---|---|
-| `@J1` ... `@J12` | Journey in PRD section 4 |
-| `@T1` ... `@T15`, `@T10a` ... `@T10d` | Test matrix ID (PRD section 10) |
+| `@J1` ... `@J13` | Journey in PRD section 4 |
+| `@T1` ... `@T20`, `@T10a` ... `@T10d` | Test matrix ID (PRD section 10; T16-T20 are Phase 7) |
 | `@unit`, `@integration`, `@e2e` | Automated level |
 | `@manual` | Owner-led live run with a commercial agent; record the result in `tests/results/<agent>-<date>.md` |
 | `@web`, `@api`, `@mcp` | Route |
-| `@FR1` ... `@FR41` | Functional requirement in PRD section 8 |
+| `@FR1` ... `@FR47` | Functional requirement in PRD section 8 |
 
 ## Conventions
 
