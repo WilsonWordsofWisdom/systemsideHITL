@@ -18,6 +18,7 @@ import { getClient } from "@/lib/oauth/clients";
 import { verifyAccessToken } from "@/lib/oauth/grants";
 import { oauthUrls } from "@/lib/oauth/metadata";
 import { grants, scopeForAction } from "@/lib/oauth/scopes";
+import { sessionError, verifyPoppySession } from "@/lib/poppy/session";
 
 export const dynamic = "force-dynamic";
 
@@ -67,11 +68,26 @@ async function serve(request: Request) {
   });
   if (!verified) return unauthorized(cfg.appOrigin, true);
 
+  // A Poppy Session header is verified on every request that carries one (Poppy
+  // 5.3, FR46): a failure is 400 invalid_session, never 401.
+  const poppySession = poppyOn()
+    ? await verifyPoppySession(db, request, {
+        origin: cfg.appOrigin,
+        token: { value: token, clientId: verified.clientId, userId: verified.userId },
+      })
+    : null;
+  if (poppySession && !poppySession.ok) {
+    const res = sessionError(poppySession);
+    for (const [k, v] of Object.entries(CORS)) res.headers.set(k, v);
+    return res;
+  }
+
   const client = await getClient(db, verified.clientId);
   const session = await ensureMcpSession(db, {
     secret,
     clientId: verified.clientId,
-    clientName: client?.name ?? verified.clientId,
+    clientName:
+      client?.name ?? (poppySession?.ok ? poppySession.session.agentName : verified.clientId),
     userId: verified.userId,
     tokenExpiresAt: verified.expiresAt,
     // A tester can tag a run by adding ?run=<id> to the MCP server URL (FR40).
@@ -122,6 +138,9 @@ async function serve(request: Request) {
         ? await legacyClientInfo(db, session.id)
         : msg.client,
     gateMode: mcpGateMode(),
+    poppySession: poppySession?.ok
+      ? { sid: poppySession.session.sid, sub: poppySession.session.sub }
+      : null,
     visibleTools:
       msg.method === "tools/list" && mcpStepScopedTools()
         ? await stepScopedTools(db, verified.userId)

@@ -330,3 +330,181 @@ describe("MCP scopes", () => {
     expect((await call("list_applications")).status).not.toBe(403);
   });
 });
+
+// Poppy Session JWTs (J13 T19; FR46; control PP5).
+describe("Poppy Sessions", () => {
+  const sidOf = () => `sid_${crypto.randomUUID().replace(/-/g, "")}`;
+
+  async function sessionHeader(
+    opts: {
+      url?: string;
+      method?: string;
+      sid?: string;
+      sub?: string;
+      accessToken?: string;
+      aud?: string;
+      jti?: string;
+      dlgSeconds?: number;
+      dlgExpired?: boolean;
+      badKid?: boolean;
+      noDelegation?: boolean;
+    } = {},
+  ) {
+    const { calculateJwkThumbprint } = await import("jose");
+    const delegated = await generateKeyPair("ES256");
+    const cnf = await exportJWK(delegated.publicKey);
+    const now = Math.floor(Date.now() / 1000);
+    const iat = opts.dlgExpired ? now - 3600 : now;
+    const dlg = await new SignJWT({ cnf: { jwk: cnf }, jti: crypto.randomUUID() })
+      .setProtectedHeader({ alg: "ES256", typ: "poppy-delegation+jwt", kid: "k1" })
+      .setIssuer(clientId)
+      .setIssuedAt(iat)
+      .setExpirationTime(iat + (opts.dlgSeconds ?? 600))
+      .sign(privateKey);
+    const kid = opts.badKid ? "not-the-thumbprint" : await calculateJwkThumbprint(cnf);
+    const { createHash } = await import("node:crypto");
+    return new SignJWT({
+      sid: opts.sid ?? sidOf(),
+      sub: opts.sub ?? "pa-user-1",
+      htm: opts.method ?? "POST",
+      htu: opts.url ?? `${ORIGIN}/mcp`,
+      jti: opts.jti ?? crypto.randomUUID(),
+      ...(opts.accessToken
+        ? { ath: createHash("sha256").update(opts.accessToken).digest("base64url") }
+        : {}),
+    })
+      .setProtectedHeader({
+        alg: "ES256",
+        typ: "poppy-session+jwt",
+        kid,
+        ...(opts.noDelegation ? {} : { poppy_dlg: dlg }),
+      })
+      .setIssuer(clientId)
+      .setAudience(opts.aud ?? ORIGIN)
+      .setIssuedAt()
+      .sign(delegated.privateKey);
+  }
+
+  const verify = async (header: string, token?: { value: string; userId?: string }) => {
+    const { verifyPoppySession } = await import("@/lib/poppy/session");
+    return verifyPoppySession(
+      db,
+      new Request(`${ORIGIN}/mcp?run=r1`, { method: "POST", headers: { "poppy-session": header } }),
+      {
+        origin: ORIGIN,
+        token: token
+          ? { value: token.value, clientId, userId: token.userId ?? DEMO_USER_ID }
+          : null,
+      },
+    );
+  };
+
+  it("accepts a valid Session and links the agent's user ID to the account", async () => {
+    const check = await verify(await sessionHeader({ accessToken: "tok-1" }), { value: "tok-1" });
+    expect(check).toMatchObject({ ok: true, session: { clientId, sub: "pa-user-1" } });
+    const { poppyLinks } = await import("@/lib/db/schema");
+    const links = await db.select().from(poppyLinks);
+    expect(links).toEqual([
+      expect.objectContaining({ clientId, sub: "pa-user-1", userId: DEMO_USER_ID }),
+    ]);
+  });
+
+  it.each([
+    ["an expired delegation", { dlgExpired: true }],
+    ["a delegation longer than 24 hours", { dlgSeconds: 25 * 3600 }],
+    ["a kid that is not the delegated key's thumbprint", { badKid: true }],
+    ["an htu for another URL", { url: `${ORIGIN}/api/poppy/tasks` }],
+    ["another method", { method: "GET" }],
+    ["another audience", { aud: "https://other.example" }],
+    ["no delegation", { noDelegation: true }],
+  ])("refuses %s with invalid_session", async (_label, opts) => {
+    const check = await verify(await sessionHeader(opts));
+    expect(check).toMatchObject({ ok: false, error: "invalid_session" });
+  });
+
+  it("refuses a replayed Session JWT", async () => {
+    const header = await sessionHeader();
+    expect((await verify(header))?.ok).toBe(true);
+    expect(await verify(header)).toMatchObject({ ok: false, error: "invalid_session" });
+  });
+
+  it("checks ath against the access token on the same request", async () => {
+    expect(
+      await verify(await sessionHeader({ accessToken: "tok-a" }), { value: "tok-b" }),
+    ).toMatchObject({
+      ok: false,
+    });
+    expect(await verify(await sessionHeader({ accessToken: "tok-a" }))).toMatchObject({
+      ok: false,
+    });
+    expect(await verify(await sessionHeader(), { value: "tok-a" })).toMatchObject({ ok: false });
+  });
+
+  it("keeps a Session's user ID, and an agent user ID on one account", async () => {
+    const sid = sidOf();
+    expect((await verify(await sessionHeader({ sid, sub: "pa-user-2" })))?.ok).toBe(true);
+    expect(await verify(await sessionHeader({ sid, sub: "pa-user-3" }))).toMatchObject({
+      ok: false,
+      error: "invalid_session",
+    });
+    const { SECOND_USER_ID } = await import("@/scripts/seed");
+    expect(
+      await verify(await sessionHeader({ sub: "pa-user-1", accessToken: "tok-2" }), {
+        value: "tok-2",
+        userId: SECOND_USER_ID,
+      }),
+    ).toMatchObject({ ok: false, error: "session_ended" });
+  });
+
+  it("on /mcp: a bad Session is 400; a good one is logged as a Poppy agent", async () => {
+    const code = await signIn("applications:read");
+    const t = await token({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: `${agentOrigin}/callback`,
+      code_verifier: verifier,
+    });
+    const { POST } = await import("@/app/mcp/route");
+    const call = async (sessionJwt: string) =>
+      POST(
+        new Request(`${ORIGIN}/mcp`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${t.body.access_token}`,
+            "poppy-session": sessionJwt,
+            "poppy-version": "1.0",
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            "mcp-protocol-version": "2025-11-25",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "list_applications", arguments: {} },
+          }),
+        }),
+      );
+    const bad = await call(await sessionHeader({ badKid: true, accessToken: t.body.access_token }));
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toBe("invalid_session");
+
+    const good = await call(
+      await sessionHeader({ sub: "pa-mcp", accessToken: t.body.access_token }),
+    );
+    expect(good.status).toBe(200);
+    // The response streams; the tool logs before its result is sent.
+    expect(await good.text()).toContain('"isError":false');
+    const { requestLog } = await import("@/lib/db/schema");
+    const rows = await db.select().from(requestLog);
+    const logged = rows.find(
+      (r) =>
+        r.pathOrTool === "list_applications" &&
+        (r.actorSignals as { poppySession?: unknown }).poppySession,
+    );
+    expect(logged?.actorSignals).toMatchObject({
+      facts: { protocolAgent: { source: "poppy_session", agent: clientId } },
+      poppySession: { sub: "pa-mcp" },
+    });
+  });
+});

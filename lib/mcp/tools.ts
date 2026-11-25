@@ -53,6 +53,8 @@ export interface McpCaller {
   ttlSeconds: number;
   // The revision and capabilities the client declared (control M6).
   client: McpClientInfo;
+  // A verified Poppy Session on this request (Phase 7, FR46), if any.
+  poppySession?: { sid: string; sub: string } | null;
   gateMode: McpGateMode;
   // Step-scoped tools/list (FR33): the tools to list, or null for all of them.
   visibleTools?: ReadonlySet<string> | null;
@@ -222,7 +224,7 @@ async function guarded(
       secret: c.secret,
       mode: c.mode,
       ttlSeconds: c.ttlSeconds,
-      mcp: { clientId: c.clientId, tool, client: c.client },
+      mcp: { clientId: c.clientId, tool, client: c.client, poppySession: c.poppySession },
       poppyApproval: poppy ? approvalFromMeta(ctx.mcpReq._meta) : null,
     });
   } catch (err) {
@@ -285,8 +287,14 @@ export async function logMcpRequest(c: McpCaller, pathOrTool: string) {
     actorClass: "declared_agent",
     actorSignals: {
       tier: "A",
-      facts: { protocolAgent: { source: "mcp_token", agent: c.clientId } },
+      facts: {
+        protocolAgent: {
+          source: c.poppySession ? "poppy_session" : "mcp_token",
+          agent: c.clientId,
+        },
+      },
       mcp: c.client,
+      ...(c.poppySession ? { poppySession: c.poppySession } : {}),
     },
     policyDecision: "allow",
     outcome: "executed",

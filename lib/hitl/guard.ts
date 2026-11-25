@@ -68,7 +68,13 @@ export interface GuardInput {
   // MCP: the OAuth client acting for the user. It is tier A evidence (the token
   // names the client), binds tickets to the client, and the tool name and the
   // client's declared revision and capabilities are logged (control M6).
-  mcp?: { clientId: string; tool: string; client?: McpClientInfo };
+  mcp?: {
+    clientId: string;
+    tool: string;
+    client?: McpClientInfo;
+    // A verified Poppy Session on the request (FR46): tier A as a Poppy agent.
+    poppySession?: { sid: string; sub: string } | null;
+  };
   // A Poppy Operations approval (Poppy-Approval header or MCP _meta), passed only
   // when POPPY=on and the request declares the extension (FR43, FR44).
   poppyApproval?: PoppyApproval | null;
@@ -133,7 +139,10 @@ export async function hitlGuard(
     // Tier A: the MCP token names the client; on the web, a valid Web Bot Auth
     // signature marks this one request, even on a human's cookie (A7).
     const protocolAgent = input.mcp
-      ? { source: "mcp_token" as const, agent: input.mcp.clientId }
+      ? {
+          source: input.mcp.poppySession ? ("poppy_session" as const) : ("mcp_token" as const),
+          agent: input.mcp.clientId,
+        }
       : await deps.webBotAuth(request);
     const classifierInput = await requestClassifierInput({
       db,
@@ -209,6 +218,7 @@ export async function hitlGuard(
         action: input.action,
         mode: input.mode,
         ...(input.mcp?.client ? { mcp: input.mcp.client } : {}),
+        ...(input.mcp?.poppySession ? { poppySession: input.mcp.poppySession } : {}),
         ...(input.poppyApproval ? { poppyApproval: input.poppyApproval } : {}),
       },
       policyDecision: decision,

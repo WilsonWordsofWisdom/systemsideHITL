@@ -24,6 +24,15 @@ export function poppyDocument(origin: string, policy: Policy) {
     },
     // One authorization server (this app), so `issuer` can be left out.
     auth: { scopes: POPPY_SCOPES, scope_hints: scopeHints(policy) },
+    // The MCP server accepts Poppy Sessions and enforces these scopes (slice C2).
+    apis: [
+      {
+        type: "mcp",
+        url: `${origin}/mcp`,
+        description:
+          "Permit applications as MCP tools: browse, draft, and ask to submit, pay or delete. Submitting, paying and deleting need the account holder's passkey approval.",
+      },
+    ],
     web: {},
     tasks: { endpoint: `${origin}${POPPY_PATHS.tasks}` },
     // Operations v3 on the API and MCP routes (slice B). No `endpoint` yet: the

@@ -53,6 +53,7 @@ describe("poppy.json", () => {
 
   it("declares sign-in, the website, tasks and Operations", () => {
     expect(Object.keys(doc).sort()).toEqual([
+      "apis",
       "auth",
       "extensions",
       "organization",
@@ -61,6 +62,7 @@ describe("poppy.json", () => {
       "web",
     ]);
     expect(doc.web).toEqual({});
+    expect(doc.apis).toEqual([expect.objectContaining({ type: "mcp", url: `${ORIGIN}/mcp` })]);
     // Operations v3 without a website endpoint (that needs browser join, slice C).
     expect(doc.extensions).toEqual({ operations: [{ version: "3" }] });
   });
