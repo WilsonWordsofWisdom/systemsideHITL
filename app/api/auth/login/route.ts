@@ -17,6 +17,7 @@ import {
   clearFailures,
   lockedUntil,
   recordFailure,
+  retryAfter,
 } from "@/lib/ratelimit";
 import { classifyActor, getClassifierConfig, loginClassification } from "@/lib/hitl/classifier";
 import { clientContextHash, loginClassifierInput, recordLoginRisk } from "@/lib/hitl/inputs";
@@ -39,10 +40,14 @@ const STATUS: Record<ErrorCode, number> = { invalid: 401, locked: 429, bad_reque
 export async function POST(request: Request) {
   const cfg = appConfig();
   const html = wantsHtml(request);
-  const fail = (code: ErrorCode) =>
+  // A 429 tells API callers how long the lock lasts (Retry-After).
+  const fail = (code: ErrorCode, retry?: string) =>
     html
       ? NextResponse.redirect(new URL(`/login?error=${code}`, cfg.appOrigin), 303)
-      : NextResponse.json({ error: code }, { status: STATUS[code] });
+      : NextResponse.json(
+          { error: code },
+          { status: STATUS[code], headers: retry ? { "Retry-After": retry } : undefined },
+        );
 
   if (!isSameOrigin(request, cfg.appOrigin)) return fail("bad_request");
   let body: Record<string, string>;
@@ -62,9 +67,8 @@ export async function POST(request: Request) {
   const emailKey = `login:email:${email}`;
   const ipKey = `login:ip:${ip}`;
 
-  if ((await lockedUntil(db, emailKey, now)) || (await lockedUntil(db, ipKey, now))) {
-    return fail("locked");
-  }
+  const until = (await lockedUntil(db, emailKey, now)) ?? (await lockedUntil(db, ipKey, now));
+  if (until) return fail("locked", retryAfter(until, now, LOGIN_EMAIL_LIMIT.lockSec));
 
   const [user] = await db
     .select({ id: users.id, passwordHash: users.passwordHash })
@@ -74,7 +78,10 @@ export async function POST(request: Request) {
   if (!(await verifyPassword(user?.passwordHash, password)) || !user) {
     const emailLocked = await recordFailure(db, emailKey, LOGIN_EMAIL_LIMIT, now);
     const ipLocked = await recordFailure(db, ipKey, LOGIN_IP_LIMIT, now);
-    return fail(emailLocked || ipLocked ? "locked" : "invalid");
+    if (emailLocked || ipLocked) {
+      return fail("locked", retryAfter(null, now, LOGIN_EMAIL_LIMIT.lockSec));
+    }
+    return fail("invalid");
   }
   await clearFailures(db, emailKey);
 

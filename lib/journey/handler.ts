@@ -7,7 +7,7 @@ import { verifyCsrf } from "../auth/session";
 import type { AppDb } from "../db/types";
 import { getDb } from "../db/server";
 import { gateStatus, handoffMode } from "../flags";
-import { hitlGuard, type GuardResult } from "../hitl/guard";
+import { TICKET_USER_LIMIT, hitlGuard, type GuardResult } from "../hitl/guard";
 import {
   STEP_UP_HEADER,
   continueUrl,
@@ -168,8 +168,13 @@ function guardResponse(
     case "denied":
       if (html)
         return back(guard.reason === "rate_limited" ? "rate_limited" : `denied_${opts.action}`);
+      // The guard doesn't report when the lock ends; ticket locks last lockSec (60 s).
       return NextResponse.json(deniedBody(opts.action, guard.reason), {
         status: guard.reason === "rate_limited" ? 429 : 403,
+        headers:
+          guard.reason === "rate_limited"
+            ? { "Retry-After": String(TICKET_USER_LIMIT.lockSec) }
+            : undefined,
       });
     case "ticket_invalid":
       if (html) return back(`ticket_${guard.reason}`);

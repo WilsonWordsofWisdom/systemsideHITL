@@ -5,7 +5,7 @@ import { clientIp, ipHash } from "@/lib/http";
 import { logEvent } from "@/lib/log";
 import { RegistrationError, registerClient } from "@/lib/oauth/clients";
 import { PUBLIC_CORS } from "@/lib/oauth/metadata";
-import { lockedUntil, recordFailure, type LimitRule } from "@/lib/ratelimit";
+import { lockedUntil, recordFailure, retryAfter, type LimitRule } from "@/lib/ratelimit";
 
 // Registrations per IP hash: generous for testers, a brake on floods.
 const REGISTER_LIMIT: LimitRule = { max: 30, windowSec: 3600, lockSec: 3600 };
@@ -17,13 +17,15 @@ export async function POST(request: Request) {
   const now = new Date();
   const ip = ipHash(clientIp(request), getSessionSecret());
   const key = `oauth:register:${ip}`;
-  const json = (body: unknown, status: number) =>
-    NextResponse.json(body, { status, headers: PUBLIC_CORS });
+  const json = (body: unknown, status: number, headers: Record<string, string> = {}) =>
+    NextResponse.json(body, { status, headers: { ...PUBLIC_CORS, ...headers } });
 
-  if (await lockedUntil(db, key, now)) {
+  const until = await lockedUntil(db, key, now);
+  if (until) {
     return json(
       { error: "invalid_client_metadata", error_description: "Too many registrations." },
       429,
+      { "Retry-After": retryAfter(until, now, REGISTER_LIMIT.lockSec) },
     );
   }
   await recordFailure(db, key, REGISTER_LIMIT, now);

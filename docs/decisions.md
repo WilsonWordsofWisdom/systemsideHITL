@@ -344,6 +344,16 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 **Why:** Poppy is the only standard found that defines how a company tells a personal agent a step needs approval and how the agent resumes, and it maps closely onto our tickets; its approval model (agent attestation) is the main point our prototype tests against. Research: `docs/research/agent-standards.md`.
 **Alternatives:** a separate Poppy version of the prototype (duplicated setup, drifting gates); analysis only, without building (loses the live comparison).
 
+## 2026-11-25 — Poppy slice A declares only what works today (Phase 7)
+**Decision:**
+- **poppy.json content:** `protocol_version` 1.0, `organization` (name, host as `domain`), `web: {}` (agents browse as ordinary signed-out visitors, no browser join yet) and `tasks`. No `auth` and no `apis` until slice C.
+- **Why `auth` and `apis` wait:** a listed issuer's metadata must name this domain in `protected_resources` and offer refresh tokens and revocation, and every listed API must accept Poppy sessions and enforce scopes. None of that exists before slice C, and an agent that finds invalid issuer metadata must stop (no fallback). The `scope_hints` from the policy file move with `auth.scopes`.
+- **Root OAuth metadata:** with `POPPY=on`, `/.well-known/oauth-protected-resource` answers 404, which Poppy reads as "no issuer". Its current content describes `/mcp`, not the domain, which Poppy would treat as invalid. MCP clients are unaffected because the `/mcp` challenge names the `/mcp` metadata URL. With the flag off the response is unchanged.
+- **Tasks and feedback:** the response is the same for every caller, so the Session header is not required yet (the spec allows ignoring it in that case); a `Poppy-Version` that is present must be 1.x or the answer is `version_unsupported` (400). Excluded tasks are the actions the policy denies to declared agents (today `update_contact`). Feedback is logged to `request_log` as `poppy_feedback`, 30 reports per IP hash per hour; it is exempt from the guard coverage test because it changes no journey state.
+- **Retry-After:** every 429 (sign-in, client registration, approval, journey actions, feedback) now carries `Retry-After`, with the flag on or off.
+
+**Why:** Poppy 1.0 sections 3, 3.2, 3.4 and 9; FR42; controls PP1, PP2.
+
 ## Open
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.
 - Optional before Phase 6: GitHub Actions e2e run against the Supabase test project (exercises the pooler).

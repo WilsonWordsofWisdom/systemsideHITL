@@ -104,7 +104,7 @@ Run order and rules:
 
 ## Phase 7: Poppy alignment (Personal Agent Protocol 1.0)
 
-**Status (2026-11-24):** planned; research in [docs/research/agent-standards.md](research/agent-standards.md), owner decision D8. Starts on its own branch after the Phase 6 observe baseline has been run with `POPPY` absent, so the baseline is not affected.
+**Status (2026-11-25):** in progress on `feature/phase-7-poppy`; research in [docs/research/agent-standards.md](research/agent-standards.md), owner decision D8. `POPPY` stays absent in production until the Phase 6 observe baseline is done. Slice A done: `POPPY` flag, `/.well-known/poppy.json` (organization, `web`, `tasks`), tasks endpoint with `excluded_tasks` from the policy file, feedback endpoint logged to `request_log` and rate limited, `Poppy-Version` check, root OAuth metadata answering 404 ("no issuer") with the flag on, `Retry-After` on every 429 (319 unit and integration tests, 63 end-to-end tests). Two items moved from slice A to slice C to stay conformant (decisions log, 2026-11-25): `auth` with scopes and `scope_hints`, `apis`, and the domain-level protected resource document.
 
 **Shape.** No second login page and no second deployment. Poppy is an adapter in `lib/poppy/` around the existing guard: new inputs (a verified `Poppy-Session` becomes a tier A identity signal) and new outputs (Poppy's response formats next to ours). Policy, tickets, hashing and passkey approval are unchanged. A Poppy agent signs the person in through the existing OAuth authorize flow, which uses the existing `/login` and consent page. `POPPY=off` (default) leaves every current behaviour and response byte-for-byte unchanged; with `POPPY=on`, agents that do not use Poppy are still treated exactly as before.
 

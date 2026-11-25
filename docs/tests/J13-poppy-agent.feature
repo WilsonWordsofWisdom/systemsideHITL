@@ -21,8 +21,20 @@ Feature: Poppy personal agent (Phase 7)
     When "/.well-known/poppy.json" is generated
     Then protocol_version is "1.0" and organization.domain is the host of APP_ORIGIN
     And every URL in it is HTTPS on that host
-    And submit, pay and delete have scope hints with changes "irreversible"
+    And it declares web and tasks, and no auth or apis until Poppy sign-in exists
     And update_contact is listed in the tasks endpoint's excluded_tasks
+
+  @integration @api @T16 @FR42
+  Scenario: Slice A endpoints with POPPY on
+    Given POPPY is on
+    Then the root protected resource location answers 404 and the /mcp one still answers
+    And a Poppy-Version that is not 1.x gets 400 version_unsupported
+    And task feedback is logged as poppy_feedback and rate limited with Retry-After
+
+  @unit @T16 @FR42
+  Scenario: Scope hints come from the policy (slice C)
+    When auth.scopes are published
+    Then submit, pay and delete have scope hints with changes "irreversible"
 
   @integration @api @mcp @T17 @FR43 @FR44
   Scenario Outline: A relayed approval is performed exactly once

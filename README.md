@@ -49,6 +49,7 @@ Vercel project `hitl_test` with Supabase Postgres. Merging to `main` deploys pro
 |---|---|---|
 | `HITL_MODE` | `enforce` / `observe` | T12 baseline. `observe` also needs `HITL_ALLOW_OBSERVE=true`; the console shows a banner while it is on |
 | `AGENT_HINTS` | `off` / `on` | A/B variant: serves `/llms.txt`, `/agents.md` and a landing-page note |
+| `POPPY` | `off` / `on` | Phase 7 (in progress): Poppy discovery (`/.well-known/poppy.json`), tasks and feedback; off for baseline runs |
 | `T15_FIXTURE` | `off` / `on` | T15 only: shows the prompt-injection notice on the journey and at `/notices/t15` |
 | `MCP_GATE_MODE` | `tool_result` / `elicitation` | T13 |
 | `MCP_STEP_SCOPED_TOOLS` | `off` / `on` | T14 |

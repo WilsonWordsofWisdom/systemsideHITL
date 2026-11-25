@@ -4,6 +4,9 @@ type Env = Record<string, string | undefined>;
 export const agentHintsOn = (env: Env = process.env) => env.AGENT_HINTS === "on";
 export const selfDeclareUiOn = (env: Env = process.env) => (env.SELF_DECLARE_UI ?? "on") === "on";
 export const passkeyEnrolmentOpen = (env: Env = process.env) => env.PASSKEY_ENROLMENT === "open";
+// Personal Agent Protocol (Poppy) 1.0 surface (Phase 7, FR42-FR47, control PP1):
+// off unless set exactly to "on"; with it off no Poppy route exists.
+export const poppyOn = (env: Env = process.env) => env.POPPY === "on";
 // The T15 prompt-injection fixture (J10, control P4): off unless set exactly to "on".
 export const t15FixtureOn = (env: Env = process.env) => env.T15_FIXTURE === "on";
 
