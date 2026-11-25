@@ -507,4 +507,164 @@ describe("Poppy Sessions", () => {
       poppySession: { sub: "pa-mcp" },
     });
   });
+
+  // Browser join (J13 T20; FR47): a declared handover to the agent's browser.
+  describe("browser join", () => {
+    const joinPage = async () => {
+      const { GET } = await import("@/app/poppy/join/route");
+      const res = await GET(
+        new Request(`${ORIGIN}/poppy/join`, { headers: { "x-forwarded-for": "198.51.100.20" } }),
+      );
+      const html = await res.text();
+      const code = /name="code" value="([^"]+)"/.exec(html)?.[1] ?? "";
+      const cookie =
+        /__Host-poppy_join=([^;]+)/.exec(res.headers.get("set-cookie") ?? "")?.[1] ?? "";
+      return { res, code, cookie };
+    };
+
+    const authorize = async (code: string, accessToken?: string, withSession = true) => {
+      const { POST } = await import("@/app/poppy/join/authorize/route");
+      const url = `${ORIGIN}/poppy/join/authorize`;
+      return POST(
+        new Request(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "poppy-version": "1.0",
+            ...(withSession
+              ? { "poppy-session": await sessionHeader({ url, sub: "pa-join", accessToken }) }
+              : {}),
+            ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({ code }),
+        }),
+      );
+    };
+
+    const submit = async (code: string, cookie: string) => {
+      const { POST } = await import("@/app/poppy/join/route");
+      return POST(
+        new Request(`${ORIGIN}/poppy/join`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            origin: ORIGIN,
+            cookie: `__Host-poppy_join=${cookie}`,
+          },
+          body: new URLSearchParams({ code }).toString(),
+        }),
+      );
+    };
+
+    const signedInToken = async (scope: string) => {
+      const code = await signIn(scope);
+      return token({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: `${agentOrigin}/callback`,
+        code_verifier: verifier,
+      });
+    };
+
+    it("serves the join page with a short-lived __Host- cookie and no framing", async () => {
+      const { res, code, cookie } = await joinPage();
+      expect(res.status).toBe(200);
+      expect(code).toMatch(/^bc_/);
+      expect(cookie.length).toBeGreaterThan(20);
+      const setCookie = res.headers.get("set-cookie") ?? "";
+      expect(setCookie).toMatch(/Max-Age=60/);
+      expect(setCookie).toMatch(/HttpOnly/);
+      expect(setCookie).toMatch(/SameSite=strict/i);
+      expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    });
+
+    it("needs a Session, and poppy:browser-sign-in to sign the browser in", async () => {
+      const { code } = await joinPage();
+      expect((await authorize(code, undefined, false)).status).toBe(400);
+      const narrow = await signedInToken("applications:read");
+      const denied = await authorize(code, narrow.body.access_token);
+      expect(denied.status).toBe(403);
+      expect(denied.headers.get("www-authenticate")).toContain("poppy:browser-sign-in");
+      expect((await authorize("bc_unknown")).status).toBe(400);
+    });
+
+    it("a wrong cookie uses the code up", async () => {
+      const { code, cookie } = await joinPage();
+      expect((await authorize(code)).status).toBe(204);
+      expect((await submit(code, "not-the-cookie")).status).toBe(400);
+      expect((await submit(code, cookie)).status).toBe(400);
+    });
+
+    it("T20: a signed-in join starts a declared-agent session; the gate still holds; sign-out ends it", async () => {
+      const t = await signedInToken("applications:read applications:submit poppy:browser-sign-in");
+      const { code, cookie } = await joinPage();
+      expect((await authorize(code, t.body.access_token)).status).toBe(204);
+      const done = await submit(code, cookie);
+      expect(done.status).toBe(303);
+      expect(done.headers.get("location")).toBe(`${ORIGIN}/applications`);
+      const sessionToken = /dg_session=([^;]+)/.exec(done.headers.get("set-cookie") ?? "")?.[1];
+      expect(sessionToken).toBeTruthy();
+
+      const { sessions } = await import("@/lib/db/schema");
+      const { eq } = await import("drizzle-orm");
+      const { sha256Hex } = await import("@/lib/auth/crypto");
+      const [joined] = await db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.id, sha256Hex(sessionToken!)));
+      expect(joined).toMatchObject({
+        userId: DEMO_USER_ID,
+        signinMethod: "poppy_join",
+        declaredAgent: true,
+        loginActorClass: "declared_agent",
+      });
+
+      // The joined browser asks to submit: gated like any agent, as a Poppy join.
+      const { hitlGuard } = await import("@/lib/hitl/guard");
+      const { createDraft, updateDraft } = await import("@/lib/journey/service");
+      const app = await createDraft(db, DEMO_USER_ID, "Joined picnic");
+      await updateDraft(db, DEMO_USER_ID, app.id, {
+        date: "2026-12-12",
+        attendance: "80",
+        location: "Park",
+      });
+      const g = await hitlGuard({
+        db,
+        request: new Request(`${ORIGIN}/api/applications/x/submit`, { method: "POST" }),
+        route: "api",
+        userId: DEMO_USER_ID,
+        session: joined,
+        action: "submit_application",
+        resourceId: app.id,
+        body: { declaration: "on" },
+        secret: SECRET,
+        mode: "enforce",
+        ttlSeconds: 600,
+      });
+      expect(g.kind).toBe("gated");
+      expect(g.actor).toMatchObject({
+        class: "declared_agent",
+        tier: "A",
+        facts: { protocolAgent: { source: "poppy_join", agent: clientId } },
+      });
+
+      // Revoking the sign-in signs the joined browser out too.
+      const { POST } = await import("@/app/api/oauth/revoke/route");
+      await POST(
+        new Request(`${ORIGIN}/api/oauth/revoke`, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            token: t.body.refresh_token,
+            client_id: clientId,
+            client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            client_assertion: await assertion(),
+          }).toString(),
+        }),
+      );
+      const [after] = await db.select().from(sessions).where(eq(sessions.id, joined.id));
+      expect(after.revokedAt).not.toBeNull();
+    });
+  });
 });

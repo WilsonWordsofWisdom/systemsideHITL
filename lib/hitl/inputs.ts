@@ -75,7 +75,7 @@ export async function requestClassifierInput(opts: {
 export function loginClassifierInput(
   request: Request,
   opts: {
-    signinMethod: "password" | "passkey";
+    signinMethod: "password" | "passkey" | "poppy_join";
     selfDeclared: boolean;
     snapshot: BehaviourSnapshot | null;
     protocolAgent?: ClassifierInput["protocolAgent"];

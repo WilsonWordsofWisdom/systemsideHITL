@@ -10,6 +10,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { hmacBase64Url, randomToken, sha256Hex } from "../auth/crypto";
 import { oauthCodes, oauthRefreshTokens, oauthTokens } from "../db/schema";
 import type { AppDb } from "../db/types";
+import { endJoinedSessions } from "../poppy/join";
 import { ACCESS_TOKEN_TTL_SECONDS, CODE_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS } from "./metadata";
 
 // RFC 7636: 43-128 characters from the unreserved set.
@@ -197,8 +198,8 @@ async function issueRefreshToken(db: AppDb, g: Grant, now: Date) {
   return token;
 }
 
-// Revokes a sign-in: every refresh and access token descended from its code
-// (Poppy 5.5 sign-out, RFC 7009; control PP9).
+// Revokes a sign-in: every refresh and access token descended from its code, and
+// any browser session joined under it (Poppy 5.5 sign-out, RFC 7009; PP9, FR47).
 export async function revokeFamily(db: AppDb, codeId: string, now = new Date()) {
   await db
     .update(oauthRefreshTokens)
@@ -208,6 +209,7 @@ export async function revokeFamily(db: AppDb, codeId: string, now = new Date()) 
     .update(oauthTokens)
     .set({ revokedAt: now })
     .where(and(eq(oauthTokens.codeId, codeId), isNull(oauthTokens.revokedAt)));
+  await endJoinedSessions(db, codeId, now);
 }
 
 // refresh_token grant with rotation (RFC 6749 section 6, Poppy 4.4). A refresh

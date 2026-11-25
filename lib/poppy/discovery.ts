@@ -5,6 +5,7 @@
 // listed only once it accepts Poppy Sessions and enforces scopes.
 import type { Policy } from "@/lib/hitl/policy";
 import { POPPY_SCOPES, scopeHints } from "@/lib/oauth/scopes";
+import { JOIN_PATH } from "./join";
 import { OPERATIONS_VERSION } from "./operations";
 import { POPPY_VERSION } from "./version";
 
@@ -33,7 +34,9 @@ export function poppyDocument(origin: string, policy: Policy) {
           "Permit applications as MCP tools: browse, draft, and ask to submit, pay or delete. Submitting, paying and deleting need the account holder's passkey approval.",
       },
     ],
-    web: {},
+    // Browser join (slice C3). The website treats poppy:browser-sign-in as the
+    // account's full access, so web.unscoped is true; the passkey gate still holds.
+    web: { browser_session_endpoint: `${origin}${JOIN_PATH}`, unscoped: true },
     tasks: { endpoint: `${origin}${POPPY_PATHS.tasks}` },
     // Operations v3 on the API and MCP routes (slice B). No `endpoint` yet: the
     // website variant needs Poppy sessions and browser join (slice C).

@@ -365,6 +365,20 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 **Why:** Poppy Operations v3 sections 3-8; FR43, FR44; controls PP3, PP4. Open question for the Poppy maintainers (still open): whether this use of the revision is how they intend companies to require their own confirmation.
 **Alternatives:** returning operations only after the passkey (agents would see no operation for the first gate); declining with no new revision (the agent could never approve the operation).
 
+## 2026-11-25 — Poppy sign-in, Sessions and browser join (Phase 7 slice C)
+**Decision:**
+- **Clients:** a client ID that is an HTTPS URL is a Poppy agent (only with `POPPY=on`); its metadata document and key set are fetched with the Web Bot Auth SSRF guard and cached for 5 minutes. Plain MCP clients keep dynamic registration and the `mcp` scope.
+- **Scopes:** `applications:read`, `applications:write`, `applications:submit`, `applications:delete`, `payments` and `poppy:browser-sign-in`. Their `scope_hints` are derived from the policy file. No scope reaches `update_contact`, which stays in `excluded_tasks` and denied to agents. A scope only lets a request reach the guard; the gate and passkey still decide.
+- **Tokens:** Poppy sign-ins without `resource` get a domain-wide access token (1 hour) and a refresh token (30 days, rotated on use; reuse revokes the whole sign-in). Revocation ends the sign-in, its access tokens and any joined browser session.
+- **Sessions:** every `Poppy-Session` on `/mcp` and on the join endpoint is verified (Poppy 5.3). The acceptance window is 90 seconds back and 30 forward. JWT IDs are kept in `poppy_jtis` for that window. A Session keeps its first user and agent IDs, and an agent's user ID stays linked to one account (`session_ended` otherwise).
+- **Browser join:** the website treats `poppy:browser-sign-in` as the account's full access (`web.unscoped: true`) rather than applying OAuth scopes to cookie sessions; a joined session is a declared agent on every request (tier A `poppy_join`), so the gate applies as for any agent and contact changes stay denied.
+- **Website Operations not offered:** the `Poppy-Operation` header and approval endpoint are for companies that take the agent's approval on their website. Our website approval is the passkey handoff panel, which joined browsers see as before.
+- **Test mode:** loopback (plain HTTP localhost) agents are accepted only with `POPPY_ALLOW_LOOPBACK_CLIENTS=true` and an `http://localhost` `APP_ORIGIN`, so production can't enable it.
+- **Not built:** Device and Mediated Sign-In, PAR, DPoP, a user-facing "disconnect assistant" page (agents revoke through the endpoint; console reset also clears them).
+
+**Why:** Poppy 1.0 sections 3.2, 4, 5, 6; FR42-FR47; controls PP5-PP10.
+**Known test flakiness (not new):** the approval-timing end-to-end tests (handoff panel, auto-resume, full journey) occasionally time out in full-suite runs; the same happens on `main` before Phase 7. They pass on their own and on rerun.
+
 ## Open
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.
 - Optional before Phase 6: GitHub Actions e2e run against the Supabase test project (exercises the pooler).

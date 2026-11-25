@@ -61,7 +61,10 @@ describe("poppy.json", () => {
       "tasks",
       "web",
     ]);
-    expect(doc.web).toEqual({});
+    expect(doc.web).toEqual({
+      browser_session_endpoint: `${ORIGIN}/poppy/join`,
+      unscoped: true,
+    });
     expect(doc.apis).toEqual([expect.objectContaining({ type: "mcp", url: `${ORIGIN}/mcp` })]);
     // Operations v3 without a website endpoint (that needs browser join, slice C).
     expect(doc.extensions).toEqual({ operations: [{ version: "3" }] });

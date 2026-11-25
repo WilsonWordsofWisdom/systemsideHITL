@@ -143,7 +143,16 @@ export async function hitlGuard(
           source: input.mcp.poppySession ? ("poppy_session" as const) : ("mcp_token" as const),
           agent: input.mcp.clientId,
         }
-      : await deps.webBotAuth(request);
+      : session.signinMethod === "poppy_join"
+        ? // A browser that joined a Poppy agent's session (FR47): declared handover.
+          {
+            source: "poppy_join" as const,
+            agent: String(
+              (session.loginSignals as { poppy?: { clientId?: unknown } }).poppy?.clientId ??
+                "poppy",
+            ),
+          }
+        : await deps.webBotAuth(request);
     const classifierInput = await requestClassifierInput({
       db,
       request,
