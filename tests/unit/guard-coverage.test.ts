@@ -31,6 +31,8 @@ const EXEMPT: Record<string, string> = {
   "app/api/oauth/authorize/route.ts": "OAuth consent by the signed-in user, CSRF-checked (M3)",
   "app/api/oauth/token/route.ts":
     "OAuth code exchange with PKCE (M1); /mcp tools are gated in slice B",
+  "app/api/oauth/revoke/route.ts":
+    "OAuth revocation (RFC 7009, PP9): removes access only; client-authenticated",
   "app/api/poppy/feedback/route.ts":
     "Poppy task feedback (FR42): logs a report only, rate limited; no journey state",
 };

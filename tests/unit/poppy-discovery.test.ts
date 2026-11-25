@@ -38,7 +38,7 @@ describe("Poppy-Version", () => {
 });
 
 describe("poppy.json", () => {
-  const doc = poppyDocument(ORIGIN);
+  const doc = poppyDocument(ORIGIN, getPolicy());
 
   it("names this host as the organization domain and protocol 1.0", () => {
     expect(doc.protocol_version).toBe("1.0");
@@ -46,11 +46,14 @@ describe("poppy.json", () => {
       name: "DemoGov Permits (prototype)",
       domain: "hitltest.vercel.app",
     });
-    expect(poppyDocument("http://localhost:3107").organization.domain).toBe("localhost:3107");
+    expect(poppyDocument("http://localhost:3107", getPolicy()).organization.domain).toBe(
+      "localhost:3107",
+    );
   });
 
-  it("declares only what the site supports before slice C", () => {
+  it("declares sign-in, the website, tasks and Operations", () => {
     expect(Object.keys(doc).sort()).toEqual([
+      "auth",
       "extensions",
       "organization",
       "protocol_version",
@@ -60,6 +63,25 @@ describe("poppy.json", () => {
     expect(doc.web).toEqual({});
     // Operations v3 without a website endpoint (that needs browser join, slice C).
     expect(doc.extensions).toEqual({ operations: [{ version: "3" }] });
+  });
+
+  it("describes every scope and gives each a hint derived from the policy", () => {
+    const scopes = Object.keys(doc.auth.scopes);
+    expect(Object.keys(doc.auth.scope_hints).sort()).toEqual([...scopes].sort());
+    expect(doc.auth.scope_hints["applications:read"]).toEqual({
+      changes: "none",
+      personal_data: true,
+    });
+    expect(doc.auth.scope_hints["applications:write"].changes).toBe("reversible");
+    for (const s of [
+      "applications:submit",
+      "applications:delete",
+      "payments",
+      "poppy:browser-sign-in",
+    ]) {
+      expect(doc.auth.scope_hints[s].changes, s).toBe("irreversible");
+    }
+    expect(findModelDirectedText(JSON.stringify(doc.auth))).toEqual([]);
   });
 
   it("uses HTTPS URLs on this host only", () => {

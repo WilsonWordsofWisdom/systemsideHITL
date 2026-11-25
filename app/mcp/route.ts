@@ -4,13 +4,20 @@ import { appConfig } from "@/lib/app";
 import { getSessionSecret } from "@/lib/auth/crypto";
 import { validRunId } from "@/lib/console/run";
 import { getDb } from "@/lib/db/server";
-import { mcpGateMode, mcpStepScopedTools } from "@/lib/flags";
+import { mcpGateMode, mcpStepScopedTools, poppyOn } from "@/lib/flags";
 import { legacyClientInfo, readMcpMessage } from "@/lib/mcp/request";
 import { ensureMcpSession } from "@/lib/mcp/session";
-import { buildMcpServer, logMcpRequest, stepScopedTools, type McpCaller } from "@/lib/mcp/tools";
+import {
+  MCP_TOOLS,
+  buildMcpServer,
+  logMcpRequest,
+  stepScopedTools,
+  type McpCaller,
+} from "@/lib/mcp/tools";
 import { getClient } from "@/lib/oauth/clients";
 import { verifyAccessToken } from "@/lib/oauth/grants";
 import { oauthUrls } from "@/lib/oauth/metadata";
+import { grants, scopeForAction } from "@/lib/oauth/scopes";
 
 export const dynamic = "force-dynamic";
 
@@ -52,10 +59,11 @@ async function serve(request: Request) {
   const token = /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim();
   if (!token) return unauthorized(cfg.appOrigin, false);
   const u = oauthUrls(cfg.appOrigin);
+  // With POPPY=on, a Poppy sign-in without `resource` covers the whole domain.
   const verified = await verifyAccessToken(db, token, {
     secret,
     issuer: u.issuer,
-    resource: u.resource,
+    resource: poppyOn() ? [u.resource, cfg.appOrigin] : u.resource,
   });
   if (!verified) return unauthorized(cfg.appOrigin, true);
 
@@ -79,6 +87,26 @@ async function serve(request: Request) {
           .catch(() => null)
       : null;
   const msg = readMcpMessage(body);
+  // Scopes (FR45, control PP8): a tool call needs the scope for its action. The
+  // "mcp" scope covers every tool; a tool no offered scope reaches goes on to the
+  // guard, which decides as before.
+  if (msg.method === "tools/call") {
+    const name = (body as { params?: { name?: unknown } } | null)?.params?.name;
+    const def = typeof name === "string" ? MCP_TOOLS[name as keyof typeof MCP_TOOLS] : undefined;
+    const needed = def ? scopeForAction(def.action ?? (name as string)) : null;
+    if (needed && !grants(verified.scope, needed)) {
+      return NextResponse.json(
+        { error: "insufficient_scope" },
+        {
+          status: 403,
+          headers: {
+            ...CORS,
+            "WWW-Authenticate": `Bearer error="insufficient_scope", scope="${needed}", resource_metadata="${u.resourceMetadata}"`,
+          },
+        },
+      );
+    }
+  }
   const caller: McpCaller = {
     db,
     request,

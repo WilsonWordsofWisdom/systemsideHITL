@@ -1,10 +1,10 @@
 // Poppy discovery (Poppy 1.0 sections 3 and 9; FR42, controls PP1, PP2).
 //
-// Slice A declares only what the site supports today: signed-out browsing (`web`)
-// and the tasks endpoint. `auth` (issuer, scopes and scope hints) and `apis` are
-// added in slice C, because the spec requires a listed issuer's metadata to name
-// this domain and every listed API to accept Poppy sessions and enforce scopes.
+// The document declares only what the site supports: sign-in with named scopes
+// (`auth`), the website (`web`), the tasks endpoint and Operations. An API is
+// listed only once it accepts Poppy Sessions and enforces scopes.
 import type { Policy } from "@/lib/hitl/policy";
+import { POPPY_SCOPES, scopeHints } from "@/lib/oauth/scopes";
 import { OPERATIONS_VERSION } from "./operations";
 import { POPPY_VERSION } from "./version";
 
@@ -14,7 +14,7 @@ export const POPPY_PATHS = {
   feedback: "/api/poppy/feedback",
 } as const;
 
-export function poppyDocument(origin: string) {
+export function poppyDocument(origin: string, policy: Policy) {
   return {
     protocol_version: POPPY_VERSION,
     organization: {
@@ -22,6 +22,8 @@ export function poppyDocument(origin: string) {
       // The host that serves the document, with its port when that isn't the default.
       domain: new URL(origin).host,
     },
+    // One authorization server (this app), so `issuer` can be left out.
+    auth: { scopes: POPPY_SCOPES, scope_hints: scopeHints(policy) },
     web: {},
     tasks: { endpoint: `${origin}${POPPY_PATHS.tasks}` },
     // Operations v3 on the API and MCP routes (slice B). No `endpoint` yet: the

@@ -74,10 +74,15 @@ describe("with POPPY on", () => {
     expect(doc.tasks.endpoint).toBe(`${ORIGIN}/api/poppy/tasks`);
   });
 
-  it("says 'no issuer' at the root OAuth location; /mcp metadata still answers", async () => {
+  it("describes the domain at the root OAuth location; /mcp metadata still answers", async () => {
     process.env.POPPY = "on";
     const r = await routes();
-    expect(r.rootPrm().status).toBe(404);
+    const root = r.rootPrm();
+    expect(root.status).toBe(200);
+    expect(await root.json()).toMatchObject({
+      resource: ORIGIN,
+      authorization_servers: [ORIGIN],
+    });
     const mcp = r.mcpPrm();
     expect(mcp.status).toBe(200);
     expect((await mcp.json()).resource).toBe(`${ORIGIN}/mcp`);

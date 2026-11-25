@@ -6,6 +6,8 @@ import { eq } from "drizzle-orm";
 import { randomToken } from "../auth/crypto";
 import { mcpClients } from "../db/schema";
 import type { AppDb } from "../db/types";
+import { poppyOn } from "../flags";
+import { agentMetadata, clientIdUrl, type AgentMetadata } from "../poppy/agent-metadata";
 
 export type McpClient = typeof mcpClients.$inferSelect;
 
@@ -90,4 +92,61 @@ export async function getClient(db: AppDb, clientId: string | null | undefined) 
     .where(eq(mcpClients.clientId, clientId))
     .limit(1);
   return client ?? null;
+}
+
+// A client as the authorization server sees it: registered here for MCP, or a
+// Poppy agent identified by its client ID metadata document (POPPY=on only).
+export type OAuthClient =
+  | { kind: "registered"; clientId: string; name: string; redirectUris: string[] }
+  | {
+      kind: "poppy";
+      clientId: string;
+      name: string;
+      redirectUris: string[];
+      metadata: AgentMetadata;
+    };
+
+export async function resolveClient(
+  db: AppDb,
+  clientId: string | null | undefined,
+): Promise<OAuthClient | null> {
+  if (clientId && poppyOn() && clientIdUrl(clientId, true)) {
+    const metadata = await agentMetadata.client(clientId);
+    return metadata
+      ? {
+          kind: "poppy",
+          clientId: metadata.clientId,
+          name: metadata.name,
+          redirectUris: metadata.redirectUris,
+          metadata,
+        }
+      : null;
+  }
+  const row = await getClient(db, clientId);
+  return row
+    ? { kind: "registered", clientId: row.clientId, name: row.name, redirectUris: row.redirectUris }
+    : null;
+}
+
+// Exact match, except that a loopback redirect URI may use any port (RFC 8252
+// section 7.3), which Poppy agents rely on.
+export function redirectMatches(client: OAuthClient, uri: string): boolean {
+  if (client.redirectUris.includes(uri)) return true;
+  if (client.kind !== "poppy") return false;
+  let u: URL;
+  try {
+    u = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "http:" || !LOOPBACK_HOSTS.has(u.hostname)) return false;
+  return client.redirectUris.some((r) => {
+    const reg = new URL(r);
+    return (
+      reg.protocol === "http:" &&
+      reg.hostname === u.hostname &&
+      reg.pathname === u.pathname &&
+      reg.search === u.search
+    );
+  });
 }

@@ -75,7 +75,10 @@ test.describe("variant: POPPY=on", () => {
       tasks: { endpoint: `${o}/api/poppy/tasks` },
     });
 
-    expect((await request.get(`${o}/.well-known/oauth-protected-resource`)).status()).toBe(404);
+    // The root location describes the domain for Poppy (resource = the origin).
+    const root = await request.get(`${o}/.well-known/oauth-protected-resource`);
+    expect(root.status()).toBe(200);
+    expect((await root.json()).resource).toBe(o);
     const mcp = await request.get(`${o}/.well-known/oauth-protected-resource/mcp`);
     expect(mcp.status()).toBe(200);
     expect((await mcp.json()).resource).toBe(`${o}/mcp`);

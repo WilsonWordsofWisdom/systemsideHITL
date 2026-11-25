@@ -1,5 +1,6 @@
 // "Reset demo data" (spec 11.1, J11, control L3): clears logs, tickets and
-// sessions (including OAuth codes and tokens) and restores the seed applications,
+// sessions (including OAuth codes and tokens, and Poppy sign-ins, Sessions, links
+// and join codes) and restores the seed applications,
 // in one transaction. Users and their passwords, passkeys (the owner's real
 // approver credentials), run ground truth and registered MCP clients are kept.
 // The caller logs the reset afterwards.
@@ -9,7 +10,12 @@ import {
   clientSignals,
   hitlTickets,
   oauthCodes,
+  oauthRefreshTokens,
   oauthTokens,
+  poppyJoinCodes,
+  poppyJtis,
+  poppyLinks,
+  poppySessions,
   rateLimits,
   requestLog,
   sessionEvents,
@@ -34,6 +40,11 @@ export async function resetDemoData(db: AppDb) {
       sessions: await count(sessions),
       oauthCodes: await count(oauthCodes),
       oauthTokens: await count(oauthTokens),
+      oauthRefreshTokens: await count(oauthRefreshTokens),
+      poppySessions: await count(poppySessions),
+      poppyLinks: await count(poppyLinks),
+      poppyJtis: await count(poppyJtis),
+      poppyJoinCodes: await count(poppyJoinCodes),
       rateLimits: await count(rateLimits),
       applications: await count(applications),
     };
