@@ -1,6 +1,6 @@
 # Visa Trusted Agent Protocol (TAP): fit with the prototype
 
-Research note, 2026-11-25, branch `research/trusted-agent-protocol`. It asks whether Visa's Trusted Agent Protocol can be added to DemoGov Permits, and what it would add. It is a research input, not a decision; decisions for the owner are at the end.
+Research note, 2026-11-25 (updated 2026-11-26 with costs, trade-offs and options), branch `research/trusted-agent-protocol`. It asks whether Visa's Trusted Agent Protocol can be added to DemoGov Permits, and what it would add. It is a research input, not a decision; decisions for the owner are at the end.
 
 Sources and their limits: Visa's specification page on developer.visa.com showed only a landing summary, not the normative text, so the details below come from Visa's GitHub reference implementation (not normative), Visa's product terms, and Cloudflare's write-up. Items marked *(unconfirmed)* need checking against the full specification, which likely needs a Visa Developer account.
 
@@ -13,7 +13,10 @@ Sources and their limits: Visa's specification page on developer.visa.com showed
   - TAP proves **which agent** is calling and that it says it is browsing or paying. It does **not** prove that the person approved a specific action, so our passkey gate is still needed. The Visa terms leave collecting consent to the merchant.
   - **Live use needs Visa access:** the production key directory, its URL and format, and agent registration are not public.
   - **The terms are restrictive:** implementing the specification is licensed on condition of "strict conformance" to the latest version, with updates within six months of each Visa update. The sample code's licence is ambiguous (MIT-style file headers, but `LICENSE.md` points to Visa's Developer Center terms). This needs legal review before we use either.
-- **Recommendation:** don't build it now. Record it as a compatible option. Revisit if the service ever takes real payments or a payments partner asks for it, after legal review and Visa specification access. If the owner wants it for the comparison anyway, build the verifier only, behind a flag, tested with our own test keys (section 5).
+- **Recommendation (revised 2026-11-26):**
+  - **Now:** take the part of TAP's security gain that costs nothing: harden our own Web Bot Auth verifier with replay protection and path binding (option A, section 6). This is optional Phase 8 in the implementation plan.
+  - **Later:** build a TAP verifier (option B) only if Phase 6 shows trial agents sending TAP signatures, or a payments use case appears, after legal review and Visa specification access.
+  - **Production decision, not prototype:** verification at the network edge (option C).
 
 ## 2. How TAP works (verifier side)
 
@@ -45,16 +48,60 @@ TAP is closest to Web Bot Auth. Cloudflare describes it as building on Web Bot A
 
 ## 4. What it would and wouldn't add
 
-**Would add:**
-- A recognised commercial agent identity (Visa-registered) as **tier A evidence**, with the same effect as Web Bot Auth: the request is classified `declared_agent`, logged, and shown in the console.
-- An extra signal at the payment step: an `agent-payer-auth` signature means the agent claims it is paying, which can be recorded beside the ticket.
-- Coverage for agents that sign with TAP but not with plain Web Bot Auth, if Visa-registered agents appear in the trials.
+| Benefit | What it gives us | Matters for the prototype? |
+|---|---|---|
+| Recognised agent identity | A Visa-registered agent is tier A evidence (`declared_agent`), logged and shown in the console, like Web Bot Auth | Yes |
+| Vetted identity | Web Bot Auth proves *who* signed; a TAP key is listed by Visa after onboarding, so it also carries a third party's vetting | Yes: a stronger trust tier |
+| Central revocation | Visa de-lists a misbehaving agent and every merchant stops trusting it, with no allow or block lists of our own | In principle; untestable without Visa access |
+| Replay protection | The nonce makes each signature single use. Our Web Bot Auth check enforces only the time window | Yes, and a gap we can close without TAP (option A) |
+| Path binding | The signature covers the page or operation as well as the site; ours covers only `@authority` | Yes, also closable without TAP (option A) |
+| Declared intent (browse or pay) | A policy input: a pay request signed `agent-browser-auth` is an agent acting beyond its declared purpose | Partly: one payment step, a mock one |
+| Network-edge enforcement | CDNs (Cloudflare, Akamai) verify TAP and can apply managed rules before traffic reaches the app | Production only |
+| Incentive to identify | Payment networks and CDNs reward signing, so more agent traffic becomes identifiable | Yes, if trial agents sign with TAP |
+| Audit evidence | Store the verified signature and tag with the ticket: signed proof of which registered agent asked to pay | Modest here; real for payments |
+| Research value | Compare Web Bot Auth, TAP and Poppy on the same journey in the trials | Yes |
+| Consumer and payment identifiers | Prefilled checkout, returning-customer recognition, fewer chargebacks | No: we would decline them (personal data in URLs, not needed) |
 
-**Wouldn't add:**
-- **Proof of the person's approval.** The passkey gate stays exactly as it is for submit, pay and delete. Visa's own terms make the merchant responsible for consents.
-- **Data protection.** We would *not* accept consumer or payment identifiers from query parameters. Our journey doesn't need them, and accepting personal data in URLs would add privacy risk.
+**What it does not add:** proof that the person approved the action. The passkey gate stays exactly as it is for submit, pay and delete; Visa's terms make the merchant responsible for consents.
 
-## 5. If we build it: design (not started)
+## 5. Costs and trade-offs
+
+Pricing for Visa access and CDN plans was not available; items marked *(quote needed)* need a vendor quote.
+
+| Benefit | What we would need | Cost and trade-offs |
+|---|---|---|
+| Vetted identity, central revocation, declared intent | Access to Visa's agent key directory: likely Visa Developer registration and accepting the TAP product terms. Whether a commercial (acquirer or merchant) relationship is needed is *unconfirmed* | Licence obligations (strict conformance; updates within 6 months of each Visa change); legal review; Visa decides who is trusted, so legitimate unlisted agents look unknown; Mastercard runs a separate directory for Agent Pay, so each network is another integration |
+| Replay protection, path binding | Nothing from Visa: changes to our own verifier | About ½-1 day. Agents that send no nonce or don't cover `@path` get no extra protection; a strict mode can withhold the strongest identity credit from them |
+| Network-edge enforcement | A CDN or WAF verifying TAP in front of the app | Subscription: Cloudflare's advanced bot features have historically been an Enterprise add-on; whether TAP rules need it is *unconfirmed (quote needed)*. Cloudflare can't proxy `*.vercel.app`, so a custom domain is needed, which changes the passkey RP ID: **every enrolled passkey must be re-enrolled**. A second proxy in front of Vercel adds a hop and configuration. Rules live in the vendor's configuration (lock-in). The passkey gate and tickets stay in the app regardless |
+| Incentive to identify | Nothing directly | Real only if trial agents sign with TAP; unknown until Phase 6 |
+| Audit evidence | Store signature and tag with the ticket | Small effort and storage |
+
+**Cross-cutting:**
+- **Dependency:** verification depends on Visa's directory being reachable. Caching softens it, and failure must mean "unknown agent", never "human".
+- **Bias in the trials:** if only Visa-registered agents earn the strongest tier, detection results partly measure who Visa has onboarded.
+- **Privacy:** consumer and card identifiers would need a data protection assessment in any production use.
+- **Concentration:** a compromise of a central directory affects every merchant at once.
+
+## 6. Options
+
+| Option | Effort | Third-party cost | What it buys |
+|---|---|---|---|
+| **A. Harden our Web Bot Auth** (nonce and path binding) | About ½-1 day | None | Most of TAP's security gain for signing agents; no vendor, no licence. Optional Phase 8 |
+| **B. TAP verifier in the app**, behind `VISA_TAP` | 1-2 days, plus legal review and ongoing updates | Visa Developer registration; directory access *unconfirmed* | Vetted Visa identity and intent signals, if trial agents use TAP |
+| **C. Edge verification** (Cloudflare or Akamai) | Days, plus re-enrolling all passkeys | CDN plan, likely an advanced tier *(quote needed)*, plus a custom domain | Network-edge filtering; a production infrastructure decision |
+
+### Option A in detail: what it buys and what it doesn't
+
+In our design a verified signature grants **no extra privileges**: it makes the caller a declared agent, treated the same or more strictly. So the benefit of option A is mainly:
+- **Trustworthy attribution.** A captured signature can't be replayed to make other traffic look like a named operator's agent, which keeps the console and the Phase 6 detection figures accurate.
+- **No framing of real agents.** Malicious traffic can't be pinned on a vendor.
+- **A prerequisite for rewarding verified agents.** If verified agents ever get a smoother path or higher limits, signed identity becomes worth stealing, and replay protection becomes essential.
+- **Narrower scope.** A signature that today is valid for any page for up to 24 hours becomes valid for one page, once.
+- **Alignment.** It brings Web Bot Auth to the single-use standard TAP and Poppy already require, and the code can later serve a TAP profile.
+
+It doesn't stop replay of the request itself (sessions, CSRF and single-use tickets already do), doesn't protect the body (that needs `Content-Digest`, RFC 9530, an optional step), and gives nothing for agents that don't cooperate. The plan is in [docs/implementation-plan.md](../implementation-plan.md), Phase 8 (optional).
+
+## 7. Option B design: a TAP verifier (not started)
 
 Behind a new flag `VISA_TAP=on`, off by default, like `POPPY`.
 
@@ -71,12 +118,14 @@ Behind a new flag `VISA_TAP=on`, off by default, like `POPPY`.
 
 Effort: about 1-2 days. No migration (it reuses the replay table). It can't be validated live until we have access to Visa's directory.
 
-## 6. Decisions for the owner
+## 8. Decisions for the owner
 
-1. **Build now, or record as an option?** Recommendation: record it, given the commerce focus, closed key directory and licence conditions.
-2. **Legal review** of Visa's TAP product terms and the sample code licence before any implementation or reuse.
-3. **Specification access:** register on Visa Developer to read the full specification, if TAP stays on the roadmap.
-4. **Briefing:** mention TAP as an emerging payments-industry standard that our design is compatible with (same RFC 9421 base as our Web Bot Auth support), noting it identifies the agent but doesn't replace proof of the person's approval.
+1. **Option A (optional Phase 8):** build now, or after the Phase 6 baseline shows how trial agents sign.
+2. **Option B:** record as an option (recommended); revisit if trial agents send TAP signatures or a payments use case appears.
+3. **Legal review** of Visa's TAP product terms and the sample code licence before any implementation or reuse.
+4. **Specification access:** register on Visa Developer to read the full specification, if TAP stays on the roadmap.
+5. **Option C:** treat as a production infrastructure decision with bot management and domain choices.
+6. **Briefing:** payment-network agent standards strengthen how agents are identified, but bring licence obligations, directory dependence and, at the edge, CDN and domain changes. None replaces proof of the person's approval. We harden our own signature checks now and revisit network standards when there is a payments use case.
 
 ## Sources
 

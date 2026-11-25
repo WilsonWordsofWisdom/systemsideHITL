@@ -14,6 +14,7 @@ Derived from `ref/HITL-prototype-build-spec.md` §12. Each step lists its verifi
 | D6 | Phase 1 | How agents sign in | **Decided:** left to the tester per agent; the site provides a login page (password, passkey) and a passkey setup page (approver "2FA"); no second factor at sign-in |
 | D7 | Phase 6 | Run baseline with `AGENT_HINTS` off, then on as an A/B variant | **Decided:** yes, off for baseline and main runs, on as a comparison variant |
 | D8 | Phase 7 | Align with the Personal Agent Protocol (Poppy) 1.0 | **Decided (2026-11-24):** one codebase and one deployment; a Poppy adapter behind `POPPY=on` reusing the existing login, consent, approval and phone pages and the same guard; the passkey stays required for irreversible steps; critical steps stay denied for agents |
+| D9 | Phase 8 (optional) | Harden Web Bot Auth with replay protection and path binding | **Pending owner decision (2026-11-26):** optional; recommended before verified agents are given any extra trust. Visa TAP itself recorded as an option only (research: [docs/research/trusted-agent-protocol.md](research/trusted-agent-protocol.md)) |
 
 All other review decisions (unlisted actions, hash scope, ticket binding, signal window, calibration, MCP revisions, OAuth server, DB connections, baseline run, lifecycle documents) are in `docs/decisions.md` and reflected in the phases below.
 
@@ -119,6 +120,24 @@ Dependencies: no new packages expected (`jose` covers ES256 and PS384; check bef
 
 Technical debt to manage: Poppy is new (1.0 published 2026-11-14, 1.1 in draft), so all of it stays in `lib/poppy/` with pinned test vectors and a spec version constant; the two response formats are kept in step by the contract test; the OAuth additions (refresh, revocation) also serve the MCP route.
 
+## Phase 8 (optional): Web Bot Auth hardening, replay protection and path binding
+
+**Status (2026-11-26):** optional, not started; owner decision D9. Comes from the Visa Trusted Agent Protocol assessment ([docs/research/trusted-agent-protocol.md](research/trusted-agent-protocol.md), option A): the part of TAP's security gain that needs no Visa access, subscription or licence. It tightens the existing verifier in [lib/webBotAuth.ts](../lib/webBotAuth.ts); it does not add TAP.
+
+**Why (and why optional):** a verified agent signature grants no extra privileges today, so the gain is mainly accurate attribution (a captured signature can't be replayed to make other traffic look like a named operator's agent, keeping the console and Phase 6 detection figures honest) and a narrower scope for each signature (one page, once, instead of any page for up to 24 hours). It becomes essential if verified agents are ever given extra trust (smoother path, higher limits, allow-listing). The passkey gate is unchanged.
+
+About ½-1 day, plus ½ day for the optional body binding. No migration: the replay cache reuses `poppy_jtis` with a `wba:` key prefix. No new dependencies.
+
+1. **Parameters and components.** Parse `nonce` (at most 256 characters) and the covered components; support `@path`, `@method` and `@query` in the signature base, built from `APP_ORIGIN` and the request URL, never the Host header. → verify: unit tests with signatures made with our test key.
+2. **Replay cache.** With a nonce, record `wba:{agent}:{keyid}:{nonce}` until `expires` plus clock skew; without one, record a hash of the signature value. A repeat earns no identity credit and is logged as `replayed`; the request itself is not blocked, because detection is a signal. → verify: a replayed signature gets no tier A credit and the reason is logged.
+3. **Path and method binding.** When `@path` or `@method` is covered, the rebuilt signature base must match this request. → verify: a signature for one path presented on another fails.
+4. **Strict mode** behind a new experiment flag `WBA_STRICT=on` (off by default): tier A credit only for signatures with a nonce that cover `@path` and `@method`, optionally with a shorter maximum lifetime (for example 10 minutes instead of the draft's 24 hours). → verify: the same request is credited with the flag off and not with it on.
+5. **Logging and console.** Record the verification outcome (`verified`, `replayed`, `path_mismatch`, `missing_nonce_strict`) in the request's signals and show it in the console. → verify: console unit test and an integration test through the guard.
+6. **(Optional) Body binding.** When `content-digest` is covered, check the RFC 9530 digest against the body. → verify: an altered body with the same signature fails.
+7. **Documentation.** Decisions log, architecture controls (new A10 replay protection, A11 path binding), PRD FR37 note, the flag in PRD 9.4 and the README.
+
+Gaps: agents that send no nonce or don't cover `@path` get no extra protection (Phase 6 shows how many do, and strict mode measures the effect); agents that legitimately reuse a signature within its window lose identity credit; the IETF draft may change what it recommends, so the rules stay configurable; the replay check depends on the database and fails closed to "unknown agent"; the body is unprotected unless step 6 is included. Run it after the Phase 6 observe baseline, or record strict mode as a separate trial variant, so baseline results aren't affected.
+
 ## Test additions (replace spec T10)
 
 | ID | Scenario | Expected |
@@ -142,7 +161,7 @@ T10a-c run in Phase 2 with the Playwright bot; T10d in Phase 5; all repeated wit
 
 ## Order and parallelism
 
-Phases 0 → 1 → 2 are strictly sequential. Console (3) and MCP (4) both depend only on Phase 2 and can overlap. Phase 5 depends on 2 and 4. Phase 7 depends on 2, 4 and 5; it can be built while Phase 6 live runs continue, but `POPPY` stays absent until the observe baseline is done, and Poppy runs are recorded as a separate variant.
+Phases 0 → 1 → 2 are strictly sequential. Console (3) and MCP (4) both depend only on Phase 2 and can overlap. Phase 5 depends on 2 and 4. Phase 8 (optional) depends only on Phase 5 and can run any time after the Phase 6 observe baseline. Phase 7 depends on 2, 4 and 5; it can be built while Phase 6 live runs continue, but `POPPY` stays absent until the observe baseline is done, and Poppy runs are recorded as a separate variant.
 
 ## Not built (per spec)
 
