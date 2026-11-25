@@ -5,6 +5,7 @@
 // added in slice C, because the spec requires a listed issuer's metadata to name
 // this domain and every listed API to accept Poppy sessions and enforce scopes.
 import type { Policy } from "@/lib/hitl/policy";
+import { OPERATIONS_VERSION } from "./operations";
 import { POPPY_VERSION } from "./version";
 
 export const POPPY_PATHS = {
@@ -23,6 +24,9 @@ export function poppyDocument(origin: string) {
     },
     web: {},
     tasks: { endpoint: `${origin}${POPPY_PATHS.tasks}` },
+    // Operations v3 on the API and MCP routes (slice B). No `endpoint` yet: the
+    // website variant needs Poppy sessions and browser join (slice C).
+    extensions: { operations: [{ version: OPERATIONS_VERSION }] },
   };
 }
 

@@ -50,8 +50,16 @@ describe("poppy.json", () => {
   });
 
   it("declares only what the site supports before slice C", () => {
-    expect(Object.keys(doc).sort()).toEqual(["organization", "protocol_version", "tasks", "web"]);
+    expect(Object.keys(doc).sort()).toEqual([
+      "extensions",
+      "organization",
+      "protocol_version",
+      "tasks",
+      "web",
+    ]);
     expect(doc.web).toEqual({});
+    // Operations v3 without a website endpoint (that needs browser join, slice C).
+    expect(doc.extensions).toEqual({ operations: [{ version: "3" }] });
   });
 
   it("uses HTTPS URLs on this host only", () => {

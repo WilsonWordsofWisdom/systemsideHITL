@@ -506,3 +506,75 @@ describe("logging", () => {
     await client.close();
   });
 });
+
+// Poppy Operations on MCP (J13 T17, T18; FR43, FR44): with POPPY=on and the
+// extension declared on the HTTP request, the gate is a tool error carrying the
+// operation, the approval travels in _meta, and the passkey is still required.
+describe("Poppy Operations over MCP", () => {
+  const APPROVAL = "personalagentprotocol.org/approval";
+  const saved = process.env.POPPY;
+
+  it("declines the agent's own approval, then runs once after the passkey", async () => {
+    process.env.POPPY = "on";
+    try {
+      const c = await caller("client-poppy");
+      c.request = new Request(`${ORIGIN}/mcp`, {
+        method: "POST",
+        headers: { "user-agent": "agent-sdk/1.0", "poppy-extensions": '"operations";v="3"' },
+      });
+      const client = await connect(c, "modern");
+      const id = await freshDraft(client);
+
+      const gated = await client.callTool(submitArgs(id));
+      expect(gated.isError).toBe(true);
+      const op = (body(gated).operation ?? {}) as {
+        operation_id: string;
+        revision: string;
+        terms: Record<string, unknown>;
+      };
+      expect(op.operation_id).toBe(body(gated).ticket_id);
+      expect(op.terms.account_holder_passkey_approval).toBe("required");
+
+      const withApproval = (o: { operation_id: string; revision: string }, approver = "user") => ({
+        ...submitArgs(id),
+        _meta: { [APPROVAL]: { operation_id: o.operation_id, revision: o.revision, approver } },
+      });
+
+      const declined = await client.callTool(withApproval(op, "agent"));
+      expect(declined.isError).toBe(true);
+      expect(body(declined)).toMatchObject({ error: "approval_declined" });
+
+      await approveTicket(db, op.operation_id, { method: "passkey", meta: {} });
+      const replaced = await client.callTool(withApproval(op));
+      const current = body(replaced).operation as { operation_id: string; revision: string };
+      expect(current.revision).not.toBe(op.revision);
+
+      const done = await client.callTool(withApproval(current));
+      expect(done.isError).toBeFalsy();
+      const [app] = await db.select().from(applications).where(eq(applications.id, id));
+      expect(app.status).toBe("submitted");
+
+      const again = await client.callTool(withApproval(current));
+      expect(body(again)).toEqual({ operation_id: current.operation_id, status: "performed" });
+      await client.close();
+    } finally {
+      process.env.POPPY = saved;
+    }
+  });
+
+  it("is off without POPPY=on, even when the extension is declared", async () => {
+    delete process.env.POPPY;
+    const c = await caller("client-poppy-off");
+    c.request = new Request(`${ORIGIN}/mcp`, {
+      method: "POST",
+      headers: { "poppy-extensions": '"operations";v="3"' },
+    });
+    const client = await connect(c, "modern");
+    const id = await freshDraft(client);
+    const gated = body(await client.callTool(submitArgs(id)));
+    expect(gated.status).toBe("requires_human_approval");
+    expect(gated.operation).toBeUndefined();
+    process.env.POPPY = saved;
+    await client.close();
+  });
+});

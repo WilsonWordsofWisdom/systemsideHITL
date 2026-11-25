@@ -354,6 +354,17 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 
 **Why:** Poppy 1.0 sections 3, 3.2, 3.4 and 9; FR42; controls PP1, PP2.
 
+## 2026-11-25 — Poppy Operations keep the passkey through the revision (Phase 7 slice B)
+**Decision:**
+- **Who gets operations:** only API and MCP requests that declare `Poppy-Extensions: "operations";v="3"` while `POPPY=on`. Everyone else gets today's responses. `poppy.json` lists `extensions.operations` version "3" without an `endpoint`.
+- **Response:** 403 `approval_required` with the `operation` and our own gate fields in the same body (the spec allows extra members); MCP returns a tool error with `structuredContent.operation`. `operation_id` is the ticket ID. The `terms` carry the action, the ticket preview, the approval page and `account_holder_passkey_approval`: `required` or `given`.
+- **Revision:** the payload hash plus the passkey state, so approving with the passkey changes the revision. Poppy forbids answering an approval with the revision it names and says a company that wants the person's own confirmation should not rely on the agent's approval. So an approval of the `required` revision is declined (`approval_declined`, with the approval page as the alternative), an approval of a replaced revision gets the current operation back, and only an approval of the `given` revision is performed, through the same atomic ticket consume.
+- **Order of checks:** the "already performed" check runs before the resource preconditions, so a resend after a submit answers `performed` instead of "already submitted". A consumed ticket whose action has not logged an outcome answers 503 with `Retry-After`.
+- **Website variant deferred:** the `Poppy-Operation` header and approval endpoint need a verified Poppy session (`sid`) and browser join, so they move to slice C.
+
+**Why:** Poppy Operations v3 sections 3-8; FR43, FR44; controls PP3, PP4. Open question for the Poppy maintainers (still open): whether this use of the revision is how they intend companies to require their own confirmation.
+**Alternatives:** returning operations only after the passkey (agents would see no operation for the first gate); declining with no new revision (the agent could never approve the operation).
+
 ## Open
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.
 - Optional before Phase 6: GitHub Actions e2e run against the Supabase test project (exercises the pooler).
