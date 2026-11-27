@@ -8,38 +8,39 @@
 - the standards research ([agent-standards.md](agent-standards.md), [trusted-agent-protocol.md](trusted-agent-protocol.md), [g6-g9-standards.md](g6-g9-standards.md));
 - the passkey-step review and the H1 and H6 fixes ([decisions.md](../decisions.md), 2026-11-27);
 - the owner's planning answers on 2026-11-27:
-  - agency stacks are mixed or unknown;
+  - adopters' stacks are mixed or unknown;
   - v0.1 is the specification, tests and guide;
   - approvers are pluggable;
-  - share privately first.
+  - share privately first (superseded the same day: the owner decided the kit repository is developed in public).
 
 ## 1. Summary
 
-- **What the kit is:** a way for any agency to put a server-side human approval gate in front of irreversible actions in its own system, whatever its technology. A third-party AI agent can prepare an action, but **only the account holder's own strong approval can complete it**.
+- **Who it's for:** any organisation that runs an online service, whether enterprise, company, startup or public sector. It is generic and sector-neutral; the prototype's permit service is only the worked example.
+- **What the kit is:** a way for any organisation to put a server-side human approval gate in front of irreversible actions in its own system, whatever its technology. A third-party AI agent can prepare an action, but **only the account holder's own strong approval can complete it**.
 - **Shape, in four layers, each usable on its own:**
   1. a **specification** (HGK), independent of programming language;
-  2. a black-box **conformance suite** an agency runs against its own system;
+  2. a black-box **conformance suite** an organisation runs against its own system;
   3. an **implementation guide**: how to choose actions, integrate, roll out and test with live agents;
   4. later, a **TypeScript reference SDK** taken out of the prototype.
 - **v0.1** is layers 1-3; the SDK follows in v0.2.
-- **Why specification first:** agencies run Java, .NET, Python and Node, so a TypeScript SDK alone would reach few of them. Black-box conformance tests let any implementation prove it holds.
+- **Why specification first:** organisations run Java, .NET, Python and Node, so a TypeScript SDK alone would reach few of them. Black-box conformance tests let any implementation prove it holds.
 - **What the evidence says:**
   - The prototype's gate held in live testing.
   - Behaviour detection scored 0 for a modern browser agent (Phase 6, F4).
   - So the kit makes the **gate and the approver** normative and keeps **agent detection advisory**. It never ships detection weights as if they were proven.
 - **Effort:** v0.1 about **4-6 weeks** of one developer after foundations; v0.2 (SDK) another **3-4 weeks**.
 - **The conformance suite must be proven to catch faults,** by running it against a deliberately broken example, not only against the prototype.
-- **Decision needed before any push to the kit repository:** it is **public with an MIT licence**, but the owner chose "private to agencies first" (section 13, D-K1). Anything pushed there now is published.
+- **The kit is developed in public** (owner decision, 2026-11-27): the repository is public with an MIT licence. Everything pushed there is published at once, so it never receives secrets, live test data, results files or unreviewed research notes; releases are still a reviewed, human-gated step (K6).
 
 ## 2. Problem and audience
 
-**The problem:** agencies' online services are now used by third-party AI agents, whether browser agents, MCP clients or personal agents. Agents can be manipulated, by prompt injection for example, can act beyond what the person intended, or can be covert. Detecting them is unreliable. What protects the person is making sure an irreversible step (submit, pay, delete, change recovery details) **cannot complete without the account holder's own approval of exactly that step**, enforced on the server.
+**The problem:** online services are now used by third-party AI agents, whether browser agents, MCP clients or personal agents. Agents can be manipulated, by prompt injection for example, can act beyond what the person intended, or can be covert. Detecting them is unreliable. What protects the person is making sure an irreversible step (submit, pay, delete, change recovery details) **cannot complete without the account holder's own approval of exactly that step**, enforced on the server.
 
 **Who uses the kit:**
 
 | Audience | Needs |
 |---|---|
-| System owner or product lead in an agency | Decide which actions need approval; understand the risk reduced and the cost |
+| System owner or product lead (enterprise, company, startup or public sector) | Decide which actions need approval; understand the risk reduced and the cost |
 | Developer or integrator (any stack) | Exact behaviour to build, integration patterns, examples |
 | Security assessor or auditor | Controls, threat model, conformance evidence, audit records |
 | Tester | A way to prove the gate holds, including with live agents |
@@ -83,12 +84,12 @@
 - the reference SDK.
 
 **Non-goals:**
-- **An identity provider or account system.** The kit uses the agency's own.
+- **An identity provider or account system.** The kit uses the organisation's own.
 - **A bot-detection product.** Detection is advisory input, never the control that holds.
 - **A web application firewall or edge product.** The gate sits at the action boundary inside the system.
-- **Classifier weights presented as proven.** Each agency tunes its own, or uses none.
+- **Classifier weights presented as proven.** Each organisation tunes its own, or uses none.
 - **Payments-specific standards** (Secure Payment Confirmation, AP2, Visa TAP). These stay optional notes.
-- **Hosting a service for agencies.**
+- **Hosting a service for adopters.**
 
 ## 5. Kit architecture
 
@@ -97,11 +98,11 @@
 | Layer | What it is | Who uses it | Release |
 |---|---|---|---|
 | Specification (HGK) | Requirements written with RFC 2119 keywords, plus JSON Schemas and an OpenAPI description of the endpoints that agents and approvers call | Developers, assessors | v0.1 |
-| Conformance suite | Black-box HTTP tests run as a Docker image against the agency's system, with a JSON and HTML report | Testers, assessors | v0.1 |
+| Conformance suite | Black-box HTTP tests run as a Docker image against the organisation's system, with a JSON and HTML report | Testers, assessors | v0.1 |
 | Implementation guide | Threat model, choosing actions, integration patterns per stack, rollout, live-agent test playbook, limitations | Everyone | v0.1 |
 | Reference SDK (TypeScript) | Packages for the core, approvers, storage and framework adapters, extracted from the prototype | Node developers; a model for ports | v0.2 |
 
-### 5.2 How the gate fits into an agency system
+### 5.2 How the gate fits into an organisation's system
 
 ```mermaid
 flowchart LR
@@ -110,18 +111,18 @@ flowchart LR
     BA[Browser agent]
     MA[MCP or API agent]
   end
-  subgraph Agency system
+  subgraph Your system
     R[Action endpoint<br/>submit, pay, delete...]
     G[HITL gate<br/>policy decision point and enforcement point]
     P[(Policy<br/>actions x actor classes)]
     TS[(Ticket store<br/>single use, bound to payload)]
     AU[(Audit records)]
-    A[Approval page<br/>on the agency's own origin]
+    A[Approval page<br/>on the organisation's own origin]
     S[Service logic]
   end
   subgraph Approver
     WA[WebAuthn passkey]
-    IDP[Agency identity provider<br/>OIDC step-up or CIBA]
+    IDP[Your identity provider<br/>OIDC step-up or CIBA]
   end
   H --> R
   BA --> R
@@ -141,13 +142,13 @@ flowchart LR
 **How a gated action flows:**
 1. The gate decides `allow`, `gate` or `deny` from the policy and the actor class.
 2. On `gate`, it creates a ticket bound to the exact request and stored state, and answers with a link to the approval page.
-3. The person approves on the agency's origin with an approver that meets section 6.2.
+3. The person approves on the organisation's origin with an approver that meets section 6.2.
 4. The original requester resends the request with the ticket.
 5. The gate uses the ticket up, once, and the action runs.
 6. Every step is recorded.
 
 **Alignment with OpenID AuthZEN:**
-- An agency that already runs a policy decision point (Open Policy Agent, Cedar, or an AuthZEN service) can make the allow, gate or deny decision there.
+- An organisation that already runs a policy decision point (Open Policy Agent, Cedar, or an AuthZEN service) can make the allow, gate or deny decision there.
 - The kit defines how that decision maps to AuthZEN's subject, action, resource and context (section 6.3).
 - Tickets and approval always stay in the gate. The policy engine never approves.
 
@@ -163,7 +164,7 @@ One document per part, versioned together (semantic versioning). The requirement
 | CORE-2 | The decision (`allow`, `gate`, `deny`) is made on the server from a declared policy; an action not listed and not marked read-only is denied | C2, C4 |
 | CORE-3 | Fail closed: an error in classification or policy gives `gate` (or `deny` for critical actions), never `allow` | C3 |
 | CORE-4 | Resource ownership is checked on every access | C5 |
-| CORE-5 | A ticket is bound to the user, action, resource and a hash of the request (excluding named volatile fields) plus the stored state. A **deterministic canonical form** is required; RFC 8785 (JCS) is recommended. The prototype's form matches JCS for JSON values (to be confirmed with JCS test vectors). The hash stays internal, so stacks don't need to match each other | T1 |
+| CORE-5 | A ticket is bound to the user, action, resource and a hash of the request (excluding named volatile fields) plus the stored state. A **deterministic canonical form** is required; RFC 8785 (JCS) is recommended, and required wherever two systems must produce the same hash (for example a gateway and a back end in different languages, or an auditor recomputing hashes). Input that can't be canonicalised is refused, never hashed: `NaN`, `Infinity`, strings with broken Unicode (lone surrogates), and values that aren't plain JSON (for example dates). The prototype's form is checked against the RFC 8785 test vectors in K2 | T1 |
 | CORE-6 | Ticket IDs carry at least 128 bits from a cryptographically secure random generator | T4 |
 | CORE-7 | Lifetime at most 10 minutes, checked when the ticket is read and when it is used | T3 |
 | CORE-8 | States: `pending → approved → consumed`; `pending → rejected / expired`. No other transitions | T5 |
@@ -189,7 +190,7 @@ One document per part, versioned together (semantic versioning). The requirement
   - `resume` (`poll`, `retry_with_header`, `expires_at`).
 - **Other outcomes** have their own schemas: `denied`, `rate_limited`, and `ticket_invalid` with reasons `not_found | wrong_session | not_approved | rejected | expired | consumed | payload_mismatch`.
 - **Ticket on retry:** `HITL-Ticket: <id>`.
-  - `X-HITL-Ticket` is accepted for compatibility; RFC 6648 discourages `X-` prefixes for new headers (decision D-K3).
+  - `X-HITL-Ticket` is accepted for compatibility; RFC 6648 discourages `X-` prefixes for new headers (header name confirmed in K2).
   - Forms may send `hitl_ticket` instead.
 - **Status endpoint:** `GET <poll>` returns the ticket state to its requester only.
 - **MCP profile:** gated tool calls return the same body as a tool result, or ask for a URL with MCP URL elicitation. Tools for gated actions declare it in their descriptions (prototype controls M1-M7).
@@ -204,7 +205,7 @@ One document per part, versioned together (semantic versioning). The requirement
 | APR-1 | Approval is cryptographically bound to **this ticket and this payload hash**: an approval for one can't approve another | W2 |
 | APR-2 | The approver is the **ticket's account holder**, verified with user verification (biometric or PIN), not only possession | W1, W3 |
 | APR-3 | An approval assertion can be used once | W2 |
-| APR-4 | The approval page shows a summary from the **ticket record** (never from URL parameters) on the agency's own origin, displayed prominently | T8, W4 |
+| APR-4 | The approval page shows a summary from the **ticket record** (never from URL parameters) on the organisation's own origin, displayed prominently | T8, W4 |
 | APR-5 | **Enrolment protection:** a password alone can't register an approver credential. A first credential needs an out-of-band proof (for example an admin-issued one-time code or identity proofing); another needs an existing credential | W12, H1 |
 | APR-6 (should) | When the requesting session shows agent evidence or suspected handover, approval should happen on **a different device or session** from the requester's | H2, H3 |
 | APR-7 (should) | Show a short confirmation code on both the requesting screen and the approval screen; limit pending approvals per user; cool down after a decline | H4 |
@@ -215,7 +216,7 @@ One document per part, versioned together (semantic versioning). The requirement
 | Profile | How it meets the required properties | Status |
 |---|---|---|
 | **WebAuthn** | Challenge `SHA-256(ticket_id ‖ payload_hash ‖ nonce)`, nonce stored once on the server; `userVerification: required`; origin and RP ID checked; credential belongs to the ticket's user; enrolment as in APR-5 | Proven in the prototype |
-| **OIDC step-up** (the agency's identity provider) | Authentication request with `acr_values` and `max_age=0` and `nonce = base64url(SHA-256(ticket_id ‖ payload_hash ‖ server nonce))`. Verify the ID token's signature, `iss`, `aud`, `nonce`, `acr` and `auth_time`, then approve the ticket | **To validate** with two real identity providers (the binding through `nonce` is an assumption) |
+| **OIDC step-up** (the organisation's identity provider) | Authentication request with `acr_values` and `max_age=0` and `nonce = base64url(SHA-256(ticket_id ‖ payload_hash ‖ server nonce))`. Verify the ID token's signature, `iss`, `aud`, `nonce`, `acr` and `auth_time`, then approve the ticket | **To validate** with two real identity providers (the binding through `nonce` is an assumption) |
 | **CIBA, with RAR** | A back-channel request with a `binding_message` showing the confirmation code, and `authorization_details` naming the action and resource; the approval comes back on the person's own device | **To validate**: needs an identity provider with CIBA. This also closes G3 (a real phone channel) |
 
 ### 6.3 HGK-Policy: the policy format (normative)
@@ -227,7 +228,7 @@ One document per part, versioned together (semantic versioning). The requirement
   - gate settings (lifetime, approver profiles allowed).
 - **Rules:** loaded at start-up, read-only; invalid policy stops start-up.
 - **The prototype's file** [policy/hitl-policy.yaml](../../policy/hitl-policy.yaml) is the example.
-- **AuthZEN mapping:** subject = user plus actor class; action = action name; resource = type plus ID; context = route and evidence. The decision maps to allow, gate or deny through a documented context field. This lets an agency's existing decision point decide while the gate enforces.
+- **AuthZEN mapping:** subject = user plus actor class; action = action name; resource = type plus ID; context = route and evidence. The decision maps to allow, gate or deny through a documented context field. This lets an organisation's existing decision point decide while the gate enforces.
 
 ### 6.4 HGK-Actor: actor classes and evidence (mostly informative)
 
@@ -258,7 +259,7 @@ One document per part, versioned together (semantic versioning). The requirement
   - reason;
   - hashed network address.
 - **Never recorded:** secrets, tokens, enrolment codes or approval assertions.
-- **Retention:** set by the agency. The guide gives defaults and data-protection notes.
+- **Retention:** set by the organisation. The guide gives defaults and data-protection notes.
 
 ### 6.6 HGK-Rollout: observe, tune, freeze, enforce (informative)
 
@@ -277,7 +278,7 @@ One document per part, versioned together (semantic versioning). The requirement
 ## 7. Conformance suite design
 
 **How it runs:**
-- **Packaging:** a Docker image (`ghcr.io/<owner>/hgk-conformance`), so agencies need no Node toolchain. The runner itself is TypeScript with Playwright.
+- **Packaging:** a Docker image (`ghcr.io/<owner>/hgk-conformance`), so organisations need no Node toolchain. The runner itself is TypeScript with Playwright.
 - **Configuration:** `hgk.config.yaml`, which sets:
   - the base URL;
   - two test accounts, the second for cross-user tests;
@@ -322,7 +323,7 @@ One document per part, versioned together (semantic versioning). The requirement
 | `@hgk/mcp` | MCP tool wrapper and gate modes | `lib/mcp/tools.ts` |
 | Later: `@hgk/web-bot-auth`, `@hgk/poppy`, `@hgk/console` | Optional identity profiles and an admin console | `lib/webBotAuth.ts`, `lib/poppy/*`, `app/console` |
 
-**Interfaces an agency implements (ports):**
+**Interfaces an organisation implements (ports):**
 
 | Interface | What it supplies |
 |---|---|
@@ -365,7 +366,7 @@ One document per part, versioned together (semantic versioning). The requirement
    - storage needs: atomic conditional updates;
    - the approval page;
    - agent-facing responses.
-5. **Approvers:** WebAuthn with enrolment codes; step-up through the agency's identity provider; CIBA. Choosing between them; accessibility and recovery.
+5. **Approvers:** WebAuthn with enrolment codes; step-up through the organisation's identity provider; CIBA. Choosing between them; accessibility and recovery.
 6. **Rollout:** observe with an end time, tune, freeze, enforce; communication to users.
 7. **Testing:** running the conformance suite; the live-agent playbook (prompts, run IDs, ground truth, results template); interpreting results honestly (Phase 6 lessons).
 8. **Operations:** audit records, alerts, incident handling (approval storms, suspected handover), data protection.
@@ -386,7 +387,7 @@ hitl-gate-kit/
   guide/                implementation guide
   docs/                 PRD.md, decisions.md, architecture.md, design.md, tests/ (living docs per SOP)
   .github/              CI workflows (actions pinned to commit SHA), CODEOWNERS, templates
-  SECURITY.md  CONTRIBUTING.md  CHANGELOG.md  LICENSE (code)  LICENSE-spec (text; see D-K2)
+  SECURITY.md  CONTRIBUTING.md  CHANGELOG.md  LICENSE (code)  LICENSE-spec (specification and guide text; chosen in K0)
 ```
 
 ## 11. Engineering, security and supply chain (kit repository)
@@ -423,33 +424,19 @@ Effort is for one developer, as an estimate. **"Kit"** means work in the `hitl-g
 
 | Phase | Steps | Repo | Verify | Effort |
 |---|---|---|---|---|
-| **K0. Prerequisites** | 1. Owner decides D-K1 (public or private) and D-K2 (licences) **before anything is pushed to the kit repository**. 2. More Phase 6 runs: Muse in enforce through to payment, P2 and P3, the covert variant (`SELF_DECLARE_UI=off`), and at least two more agents, as evidence for the guide | Owner, Prototype | Decisions logged; results files merged | Owner time |
+| **K0. Prerequisites** | 1. Owner chooses the licence for the specification and guide text (MIT like the code, or CC BY 4.0) and confirms the right to publish this work, **before the first content is pushed to the public kit repository**. 2. More Phase 6 runs: Muse in enforce through to payment, P2 and P3, the covert variant (`SELF_DECLARE_UI=off`), and at least two more agents, as evidence for the guide | Owner, Prototype | Decisions logged; results files merged | Owner time |
 | **K1. Foundations** | PRD (the journeys in section 2, metrics in section 16), decisions log, architecture with a Mermaid diagram, design notes; CI skeleton with pinned actions, `SECURITY.md`, `CODEOWNERS`, branch protection | Kit | Owner sign-off on the PRD and architecture; CI green on an empty pull request | 2-3 days |
-| **K2. Specification v0.1** | HGK-Core, -Approver (with WebAuthn complete; OIDC and CIBA marked draft), -Policy (with AuthZEN mapping), -Actor, -Audit, -Rollout; JSON Schemas and OpenAPI; a requirement ID index tracing each requirement to a prototype control | Kit | Schemas validate the prototype's real responses; each requirement has a source and a planned test | about 1 week |
+| **K2. Specification v0.1** | HGK-Core, -Approver (with WebAuthn complete; OIDC and CIBA marked draft), -Policy (with AuthZEN mapping), -Actor, -Audit, -Rollout; JSON Schemas and OpenAPI; a requirement ID index tracing each requirement to a prototype control; **run the prototype's `canonicalJson` against the RFC 8785 test vectors** and record any differences as decisions (a fix in the prototype gets its own pull request and test) | Kit + Prototype | Schemas validate the prototype's real responses; each requirement has a source and a planned test; the canonicalisation check passes or each difference is decided | about 1 week |
 | **K3. Conformance suite v0.1** | Runner, config format, approver drivers (webauthn-virtual, manual; oidc-mock as a stretch), the test catalogue in section 7, HTML and JSON report, Docker image; the `broken-service` example | Kit | Every broken-service fault switch makes the matching test fail; the suite runs from the image with only a config file | 1½-2 weeks |
 | **K4. Validate against the prototype** | Add `hgk.config.yaml` and the test-mode hooks the suite needs (a code for a test passkey, a short ticket lifetime, an audit export) to the prototype; fix any differences on either side | Prototype + Kit | The prototype passes Level 2; differences recorded as decisions | 2-3 days |
 | **K5. Implementation guide v0.1** | Chapters in section 9, with the prototype as the worked example and Phase 6 evidence | Kit | Read-through by the owner and one developer from outside the project; checklist complete | 1-2 weeks |
-| **K6. Release v0.1** | Changelog, signed tag, signed suite image, release notes with limitations; shared as decided in D-K1 | Kit | Release artefacts verify (signature, SBOM); owner approves the release | 1-2 days |
+| **K6. Release v0.1** | Changelog, signed tag, signed suite image, release notes with limitations; published in the public repository | Kit | Release artefacts verify (signature, SBOM); owner approves the release | 1-2 days |
 | **v0.2. Reference SDK** | Extract `@hgk/core`, `@hgk/webauthn`, `@hgk/postgres`, `@hgk/express`, `@hgk/next`; OIDC step-up profile validated with two identity providers; `examples/express-minimal`; move the prototype onto the SDK | Kit + Prototype | The SDK example and the prototype both pass Level 2; all 398 unit and 69 end-to-end tests in the prototype still pass | 3-4 weeks |
 | **v0.3. Profiles** | CIBA with RAR (closes G3); MCP profile tests (Level 3); Web Bot Auth strict (Phase 8) and Content-Digest (G7); explore the gateway pattern for older systems | Kit + Prototype | Level 3 passes for the prototype | 3-4 weeks |
 
 **Total:** v0.1 about 4-6 weeks after K0; v0.2 3-4 weeks; v0.3 3-4 weeks.
 
-## 13. Decisions for the owner
-
-| ID | Decision | Recommendation |
-|---|---|---|
-| **D-K1** | The kit repository is **public with an MIT licence**, but the 2026-11-27 choice was "private to agencies first". Make it private until v0.1 is reviewed, or confirm public development | **Make it private now** (GitHub settings), and decide on public release at K6. Everything pushed while it's public is published at once and may be copied |
-| **D-K2** | Licences: MIT for code; for the specification and guide text, CC BY 4.0 or the same MIT | MIT for code, CC BY 4.0 for the specification and guide; confirm the right to publish this work |
-| D-K3 | Header name for the retry ticket | `HITL-Ticket`, accepting `X-HITL-Ticket` |
-| D-K4 | Canonicalisation | Require a deterministic form, recommend RFC 8785 |
-| D-K5 | Conformance levels as in section 6.7 | As proposed |
-| D-K6 | Test-mode hooks a target must expose for the suite (test passkey with a code, short ticket lifetime, audit export) | Required for Level 2 testing, off in production, refused when the target says it is production |
-| D-K7 | Who maintains the kit, and the support statement | Owner as maintainer; "best effort, no service level" for v0.1 |
-| D-K8 | Pilot agencies and their technical contacts | Needed by K5, for the external read-through |
-| D-K9 | Package scope name (`@hgk/*`) and the suite image location | Check availability on npm before K1 |
-
-## 14. Relationship with the prototype
+## 13. Relationship with the prototype
 
 - **What the prototype becomes:** it stays the **research testbed**, the **first conformance target** and, from v0.2, the **first SDK user**.
 - **How changes flow:**
@@ -458,23 +445,23 @@ Effort is for one developer, as an estimate. **"Kit"** means work in the `hitl-g
 - **Versions:** each kit release notes the prototype version it was validated against.
 - **What stays here, never copied to the kit:** research notes, live test data and results files. They hold run IDs and observations; the guide uses summaries only.
 
-## 15. Risks and mitigations
+## 14. Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Publishing too early (public repository) | D-K1: make it private now; release review at K6 |
+| Developing in public: drafts and mistakes are visible at once | Push only reviewed content; never secrets, live test data or results files; mark drafts as such; releases (K6) are reviewed and signed |
 | The suite passes faulty implementations | The broken-service fault switches must all be caught (section 7) |
 | OIDC or CIBA binding assumptions fail with real identity providers | Profiles marked draft until validated with two providers; WebAuthn is the complete profile for v0.1 |
-| Agencies treat detection as the control | HGK-Actor is informative; the guide's threat model and the Phase 6 evidence say so plainly; Level 1 must be safe with every agent `unknown` |
+| Adopters treat detection as the control | HGK-Actor is informative; the guide's threat model and the Phase 6 evidence say so plainly; Level 1 must be safe with every agent `unknown` |
 | Approver gaps H2-H4 remain | APR-6 and APR-7 as "should" in Level 2; the guide gives the options (separate device, codes, CIBA) |
 | Scope creep: SDK, console and profiles all at once | Specification-first v0.1; the SDK in v0.2; profiles in v0.3 |
 | Supply-chain risk in a security kit | Section 11: pinned actions, provenance, SBOM, scans, human-gated releases |
-| Maintenance burden on one person | Small v0.1; a clear support statement (D-K7); conformance tests make outside contributions safer |
+| Maintenance burden on one person | Small v0.1; a clear support statement in the README ("best effort, no service level" for v0.1); conformance tests make outside contributions safer |
 | Live-agent evidence is thin (one agent) | K0 step 2 before K5; the guide reports limits honestly |
 
-## 16. Success measures
+## 15. Success measures
 
-- **North star:** the number of agency systems that pass **HGK Level 1** conformance in their test environment.
+- **North star:** the number of systems that pass **HGK Level 1** conformance in their test environment.
 - **Supporting measures:**
   - time from first read to a passing Level 1 run (KJ2, KJ3);
   - the share of broken-service faults the suite catches (target 100%);
