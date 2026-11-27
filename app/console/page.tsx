@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ClassChip, DecisionChip, ObserveBanner, shortAgent, shortId } from "@/components/console";
 import { Notice, btn, fieldInput, fieldLabel } from "@/components/journey";
 import { appConfig } from "@/lib/app";
+import { effectiveHitlMode } from "@/lib/config";
 import { getAdminSecret } from "@/lib/console/admin";
 import { getAdmin } from "@/lib/console/current";
 import { ACTUAL_ACTORS, listRequests, listRuns, signalsSummary } from "@/lib/console/queries";
@@ -9,7 +10,7 @@ import { validRunId } from "@/lib/console/run";
 import { getDb } from "@/lib/db/server";
 import { approvedNotRedeemed, ticketStates } from "@/lib/console/details";
 import { getClassifierConfig } from "@/lib/hitl/classifier";
-import { LiveRefresh, ResetDemoData } from "./console-client";
+import { EnrolmentCode, LiveRefresh, ResetDemoData } from "./console-client";
 import { DetailPanel } from "./detail-panel";
 
 const LOGIN_ERRORS: Record<string, string> = {
@@ -92,7 +93,9 @@ export default async function ConsolePage({ searchParams }: PageProps<"/console"
 
   return (
     <>
-      {appConfig().hitlMode === "observe" && <ObserveBanner />}
+      {effectiveHitlMode(appConfig()) === "observe" && (
+        <ObserveBanner until={appConfig().observeUntil!} />
+      )}
       <div className="mb-4 flex flex-wrap items-center gap-4">
         <h1 className="text-[28px] leading-9">Console</h1>
         <nav aria-label="Console" className="flex gap-4 text-sm">
@@ -114,6 +117,7 @@ export default async function ConsolePage({ searchParams }: PageProps<"/console"
           </button>
         </form>
       </div>
+      <EnrolmentCode csrf={admin.csrf} />
 
       <form method="get" action="/console" className="mb-4 flex flex-wrap items-end gap-3">
         <div>

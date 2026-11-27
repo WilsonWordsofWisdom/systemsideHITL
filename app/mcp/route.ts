@@ -2,6 +2,7 @@ import { createMcpHandler, type McpRequestContext } from "@modelcontextprotocol/
 import { NextResponse } from "next/server";
 import { appConfig } from "@/lib/app";
 import { getSessionSecret } from "@/lib/auth/crypto";
+import { effectiveHitlMode } from "@/lib/config";
 import { validRunId } from "@/lib/console/run";
 import { getDb } from "@/lib/db/server";
 import { mcpGateMode, mcpStepScopedTools, poppyOn } from "@/lib/flags";
@@ -131,7 +132,7 @@ async function serve(request: Request) {
     session,
     clientId: verified.clientId,
     secret,
-    mode: cfg.hitlMode,
+    mode: effectiveHitlMode(cfg),
     ttlSeconds: cfg.ticketTtlSeconds,
     client:
       msg.method && msg.client.era === "legacy" && msg.method !== "initialize"

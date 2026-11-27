@@ -138,6 +138,22 @@ About ½-1 day, plus ½ day for the optional body binding. No migration: the rep
 
 Gaps: agents that send no nonce or don't cover `@path` get no extra protection (Phase 6 shows how many do, and strict mode measures the effect); agents that legitimately reuse a signature within its window lose identity credit; the IETF draft may change what it recommends, so the rules stay configurable; the replay check depends on the database and fails closed to "unknown agent"; the body is unprotected unless step 6 is included. Run it after the Phase 6 observe baseline, or record strict mode as a separate trial variant, so baseline results aren't affected.
 
+## Fixes from the passkey-step review: H1 and H6
+
+**Status (2026-11-27):** built on `fix/h1-enrolment-h6-observe`. The gaps come from the review of how the passkey step is enforced and from the Phase 6 Muse findings ([docs/research/phase-6-red-team-findings.md](research/phase-6-red-team-findings.md)).
+
+1. **H1, passkey enrolment (control W12).**
+   - **First passkey:** needs a one-time enrolment code issued in the console (15 minutes, single use, hashed, rate limited).
+   - **Another passkey:** needs a passkey sign-in or a code.
+   - Migration `0007_h1_enrolment_codes`.
+   - → verify: integration tests for codes and the rule; e2e for refusal without a code, enrolment with a console-issued code, and a second passkey after passkey sign-in.
+2. **H6, observe mode (control C6).**
+   - `HITL_OBSERVE_UNTIL`, at most 24 hours ahead, is required with observe mode, and the gate is enforced again at that time.
+   - A test-mode notice shows on every page, and the console banner shows the end time.
+   - → verify: config unit tests; e2e banner checks in observe and enforce mode.
+
+Owner steps before deploying: apply migration 0007 to production (with approval). The next time you enrol a passkey with only a password sign-in, issue a code in the console first.
+
 ## Test additions (replace spec T10)
 
 | ID | Scenario | Expected |

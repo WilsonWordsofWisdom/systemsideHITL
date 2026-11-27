@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { appConfig } from "@/lib/app";
 import { getCurrentSession } from "@/lib/auth/current";
+import { effectiveHitlMode } from "@/lib/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -43,6 +45,22 @@ async function AccountNav() {
   );
 }
 
+// Observe mode turns the approval gate off for everyone, so every page says so
+// while it lasts (control C6, gap H6).
+function ObserveNotice() {
+  const cfg = appConfig();
+  if (effectiveHitlMode(cfg) !== "observe") return null;
+  return (
+    <div
+      role="note"
+      className="bg-error-container px-4 py-1.5 text-center text-sm font-medium text-on-error-container"
+    >
+      Test mode: approvals are not being enforced until{" "}
+      {cfg.observeUntil!.toISOString().replace("T", " ").slice(0, 16)} UTC.
+    </div>
+  );
+}
+
 // Root layout: prototype banner on every page (control D5), app bar, landmarks (design.md section 5).
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
@@ -60,6 +78,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Prototype for testing, not a real government service. Demo data only.
         </div>
+        <ObserveNotice />
         <header className="flex items-center gap-3 border-b border-outline-variant px-6 py-3">
           <span
             aria-hidden="true"

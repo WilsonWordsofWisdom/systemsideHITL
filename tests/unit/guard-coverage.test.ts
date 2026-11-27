@@ -27,6 +27,7 @@ const EXEMPT: Record<string, string> = {
   "app/api/console/logout/route.ts": "console sign-out: admin cookie and CSRF (L2)",
   "app/api/console/runs/route.ts": "test metadata (ground truth), admin only; no journey state",
   "app/api/console/reset/route.ts": "admin-only demo data reset, confirmed and logged (L3)",
+  "app/api/console/enrolment-code/route.ts": "admin-only passkey enrolment code, logged (W12)",
   "app/api/oauth/register/route.ts": "OAuth client registration (M2); grants no access by itself",
   "app/api/oauth/authorize/route.ts": "OAuth consent by the signed-in user, CSRF-checked (M3)",
   "app/api/oauth/token/route.ts":

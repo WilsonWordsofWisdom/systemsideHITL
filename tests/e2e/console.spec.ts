@@ -150,17 +150,34 @@ test("the policy is shown read-only", async ({ browser }) => {
   await admin.context().close();
 });
 
-test("observe mode shows a banner in the console (C6)", async ({ browser }) => {
-  const variant = await startVariant(3103, { HITL_MODE: "observe", HITL_ALLOW_OBSERVE: "true" });
+test("observe mode shows its end time in the console and on every page (C6, H6)", async ({
+  browser,
+}) => {
+  const until = new Date(Date.now() + 60 * 60 * 1000);
+  const shown = until.toISOString().replace("T", " ").slice(0, 16);
+  const variant = await startVariant(3103, {
+    HITL_MODE: "observe",
+    HITL_ALLOW_OBSERVE: "true",
+    HITL_OBSERVE_UNTIL: until.toISOString(),
+  });
   try {
     const admin = await adminPage(browser, variant.origin);
     await expect(admin.getByRole("status").first()).toContainText(
-      "Observe mode: decisions are logged but nothing is blocked.",
+      `Observe mode: decisions are logged but nothing is blocked. Enforcement resumes by itself at ${shown} UTC.`,
+    );
+    await admin.goto(`${variant.origin}/`);
+    await expect(admin.getByRole("note").filter({ hasText: "Test mode" })).toHaveText(
+      `Test mode: approvals are not being enforced until ${shown} UTC.`,
     );
     await admin.context().close();
   } finally {
     await variant.stop();
   }
+});
+
+test("enforce mode shows no test-mode notice (H6)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("note").filter({ hasText: "Test mode" })).toHaveCount(0);
 });
 
 test("the ticket and session timelines show who asked, who approved and a handover (FR39)", async ({
@@ -288,4 +305,44 @@ test("wrong admin secrets are rate limited (L2)", async ({ page }) => {
   } finally {
     await sql.end();
   }
+});
+
+test("the admin issues a one-time enrolment code and the person enrols with it (H1, W12)", async ({
+  browser,
+}) => {
+  const admin = await adminPage(browser);
+  await admin.getByText("Passkey enrolment code").click();
+  await admin.getByLabel("Account email address").fill(DEMO.email);
+  await admin.getByRole("button", { name: "Issue code" }).click();
+  const shown = admin.getByRole("status").filter({ hasText: "Enrolment code" });
+  await expect(shown).toBeVisible();
+  const code = (await shown.locator("strong").textContent())!.trim();
+  expect(code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+  await admin.context().close();
+
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await addAuthenticator(page);
+  await signIn(page, DEMO.email);
+  await expectSignedIn(page, DEMO.name);
+  await page.goto("/account/passkeys");
+  await page.getByLabel("Enrolment code").fill(code.toLowerCase());
+  await page.getByRole("button", { name: "Add a passkey" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toHaveText("Passkey added.");
+
+  // The code works once.
+  await page.getByRole("button", { name: "Add a passkey" }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("isn't valid");
+
+  const sql = testDb();
+  try {
+    const [issued] = await sql`select reason, actor_signals from request_log
+      where path_or_tool = 'console_enrolment_code' order by ts desc limit 1`;
+    expect(issued.reason).toBe("enrolment_code_issued");
+    expect(JSON.stringify(issued.actor_signals)).not.toContain(code.replace(/-/g, ""));
+  } finally {
+    await sql`delete from rate_limits where key like 'enrol_code:%'`;
+    await sql.end();
+  }
+  await context.close();
 });

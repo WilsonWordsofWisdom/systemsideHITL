@@ -71,3 +71,62 @@ test("a passkey sign-in without user verification is refused", async ({ page }) 
   );
   await expect(page).toHaveURL(/\/login/);
 });
+
+test("a password sign-in can't add a passkey without a valid enrolment code (H1, W12)", async ({
+  page,
+}) => {
+  await addAuthenticator(page);
+  await signIn(page, DEMO.email);
+  await expectSignedIn(page, DEMO.name);
+  const sql = testDb();
+  try {
+    const [before] = await sql`select count(*)::int as n from passkeys`;
+    await page.goto("/account/passkeys");
+    const alert = page.getByRole("main").getByRole("alert");
+    await page.getByRole("button", { name: "Add a passkey" }).click();
+    await expect(alert).toContainText("enrolment code");
+    await page.getByLabel("Enrolment code").fill("AAAA-AAAA-AAAA");
+    await page.getByRole("button", { name: "Add a passkey" }).click();
+    await expect(alert).toContainText("isn't valid");
+    const [after] = await sql`select count(*)::int as n from passkeys`;
+    expect(after.n).toBe(before.n);
+    const refusals = await sql`select reason from request_log
+      where path_or_tool = 'passkey_enrol_options' and outcome = 'blocked'
+      order by ts desc limit 2`;
+    expect(refusals.map((r) => r.reason)).toContain("code_invalid");
+  } finally {
+    // Wrong codes count towards the per-account lock; other specs enrol as this user.
+    await sql`delete from rate_limits where key like 'enrol_code:%'`;
+    await sql.end();
+  }
+});
+
+test("after a passkey sign-in, another passkey can be added without a code (H1, W12)", async ({
+  page,
+}) => {
+  const first = await addAuthenticator(page);
+  await enrolPasskey(page);
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await page.getByRole("button", { name: "Sign in with a passkey" }).click();
+  await expectSignedIn(page, DEMO.name);
+
+  // A second device: the first authenticator already holds a passkey for this account.
+  await first.cdp.send("WebAuthn.removeVirtualAuthenticator", {
+    authenticatorId: first.authenticatorId,
+  });
+  await addAuthenticator(page);
+  await page.goto("/account/passkeys");
+  await expect(page.getByLabel("Enrolment code")).toHaveCount(0);
+  await page.getByRole("button", { name: "Add a passkey" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toHaveText("Passkey added.");
+
+  const sql = testDb();
+  try {
+    const [audit] = await sql`select actor_signals from request_log
+      where path_or_tool = 'passkey_enrol' and outcome = 'executed' order by ts desc limit 1`;
+    expect(audit.actor_signals).toMatchObject({ via: "passkey" });
+  } finally {
+    await sql.end();
+  }
+});

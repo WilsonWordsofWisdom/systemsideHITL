@@ -1,6 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { appConfig } from "../app";
+import { effectiveHitlMode } from "../config";
 import { getSessionSecret } from "../auth/crypto";
 import { getCurrentSession } from "../auth/current";
 import { verifyCsrf } from "../auth/session";
@@ -119,7 +120,7 @@ export async function journeyAction(
       resourceId: opts.resourceId ?? null,
       body,
       secret: getSessionSecret(),
-      mode: cfg.hitlMode,
+      mode: effectiveHitlMode(cfg),
       ttlSeconds: cfg.ticketTtlSeconds,
       poppyApproval: poppy ? approvalFromHeader(request) : null,
     });

@@ -21,11 +21,19 @@ Feature: Observe-mode baseline
     When the app starts
     Then it refuses to start in observe mode
 
+  @unit @FR4
+  Scenario: Observe mode needs an end time and ends by itself (gap H6)
+    Given HITL_MODE is "observe" with the explicit allow variable
+    When HITL_OBSERVE_UNTIL is missing, has no time zone, or is more than 24 hours ahead
+    Then the app refuses to start
+    And once a valid end time has passed, the gate is enforced again without a redeploy
+
   @e2e @web @FR4
-  Scenario: The console warns while observe mode is on
-    Given HITL_MODE is "observe"
-    When the tester opens the console
-    Then a persistent banner says the gate is not enforcing
+  Scenario: The console and every page warn while observe mode is on
+    Given HITL_MODE is "observe" until a time in the next 24 hours
+    When the tester opens the console, or anyone opens any page
+    Then a banner says the gate is not enforcing and when enforcement resumes
+    And in enforce mode no such banner appears
 
   @manual @T12 @FR15
   Scenario: Baseline run per agent and freeze

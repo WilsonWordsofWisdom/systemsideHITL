@@ -47,7 +47,7 @@ Vercel project `hitl_test` with Supabase Postgres. Merging to `main` deploys pro
 
 | Flag | Values (default first) | Used for |
 |---|---|---|
-| `HITL_MODE` | `enforce` / `observe` | T12 baseline. `observe` also needs `HITL_ALLOW_OBSERVE=true`; the console shows a banner while it is on |
+| `HITL_MODE` | `enforce` / `observe` | T12 baseline. `observe` also needs `HITL_ALLOW_OBSERVE=true` and `HITL_OBSERVE_UNTIL` (a date and time with a time zone, at most 24 hours ahead, e.g. `2026-12-12T18:00:00Z`); the gate is enforced again by itself at that time. The console and every page show a banner while it is on |
 | `AGENT_HINTS` | `off` / `on` | A/B variant: serves `/llms.txt`, `/agents.md` and a landing-page note |
 | `POPPY` | `off` / `on` | Phase 7: Personal Agent Protocol (Poppy) 1.0 support: discovery, sign-in for Poppy agents, Session checks, Operations approvals and browser join; off for baseline runs |
 | `T15_FIXTURE` | `off` / `on` | T15 only: shows the prompt-injection notice on the journey and at `/notices/t15` |
@@ -57,7 +57,7 @@ Vercel project `hitl_test` with Supabase Postgres. Merging to `main` deploys pro
 | `HITL_AUTORESUME` | `off` / `on` | Page resubmits by itself after approval |
 | `HITL_GATE_STATUS` | `403` / `401` / `202` | HTTP status of a gated API response |
 | `SELF_DECLARE_UI` | `on` / `off` | The "I'm an AI agent acting for someone" box at sign-in |
-| `PASSKEY_ENROLMENT` | `closed` / `open` | Open only while the owner enrols approver passkeys |
+| `PASSKEY_ENROLMENT` | `closed` / `open` | Open only while the owner enrols approver passkeys. Even when open, a first passkey needs a one-time enrolment code from the console, and another passkey needs a passkey sign-in or a code |
 | `TICKET_TTL_SECONDS` | `600` (1-600) | A shorter value makes T7 (expiry) quicker to run |
 
 ## Running a test session

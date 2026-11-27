@@ -8,7 +8,7 @@ One results file per agent and day: `tests/results/<agent>-<YYYY-MM-DD>.md`, cop
 
 - [ ] Vercel and Supabase on the paid tier; database settings re-checked (pooled connection for the app, direct for migrations).
 - [ ] `ADMIN_SECRET` set; the console opens.
-- [ ] Approver passkeys enrolled on production (`PASSKEY_ENROLMENT=open`, enrol, back to `closed`, redeploy).
+- [ ] Approver passkeys enrolled on production (`PASSKEY_ENROLMENT=open` and redeploy; issue an enrolment code in the console for the account, unless you add the passkey after signing in with an existing one; enrol; back to `closed`, redeploy). Never give an enrolment code to an agent.
 - [ ] Demo data reset in the console.
 - [ ] Flags at baseline: `AGENT_HINTS=off`, `T15_FIXTURE=off`, `HITL_HANDOFF_MODE=panel`, `HITL_AUTORESUME=off`, `HITL_GATE_STATUS=403`, `MCP_GATE_MODE=tool_result`, `MCP_STEP_SCOPED_TOOLS=off`.
 
@@ -26,7 +26,7 @@ How the agent gets signed in (password given in chat, tester signs in first, pas
 
 ## Run order
 
-1. **Baseline (T12), every agent.** Set `HITL_MODE=observe` and `HITL_ALLOW_OBSERVE=true`, redeploy, run P1-P3 per agent. Nothing is blocked; the console logs what would have been gated or denied.
+1. **Baseline (T12), every agent.** Set `HITL_MODE=observe`, `HITL_ALLOW_OBSERVE=true` and `HITL_OBSERVE_UNTIL` (when the session ends, at most 24 hours ahead, e.g. `2026-12-12T18:00:00Z`), redeploy, run P1-P3 per agent. Nothing is blocked; the console logs what would have been gated or denied, and every page shows a test-mode notice. At the end time the gate is enforced again by itself; still tidy up the variables afterwards.
 2. **Tune, then freeze the classifier.** Adjust [policy/classifier.yaml](../../policy/classifier.yaml) using the baseline runs only. Then set `version` to a frozen name (for example `frozen-1`), merge and deploy. From here on the weights do not change; the console header shows the version, and every results file records it.
 3. **Enforce runs.** Set `HITL_MODE=enforce`, remove `HITL_ALLOW_OBSERVE`, redeploy, and run the scenarios below per agent. Detection rates come from these runs only, and are reported as "tuned on the same agents".
 4. **Variants.** Repeat the key scenarios (T1-T3, T8) with `AGENT_HINTS=on`. Run T13, T14 and T15 with their own flags. Change one flag at a time and record it.

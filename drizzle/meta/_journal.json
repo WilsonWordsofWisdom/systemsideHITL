@@ -50,6 +50,13 @@
       "when": 1795601987709,
       "tag": "0006_phase7_poppy",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795772113329,
+      "tag": "0007_h1_enrolment_codes",
+      "breakpoints": true
     }
   ]
 }

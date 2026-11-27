@@ -1,5 +1,6 @@
 import { expect, type CDPSession, type Page } from "@playwright/test";
 import postgres from "postgres";
+import { codeId } from "../../lib/auth/enrolment-codes";
 import { E2E_DEMO_PASSWORD, E2E_ORIGIN, e2eDatabase } from "./env";
 
 export const DEMO = { email: "demo@demogov.test", name: "Demo User" };
@@ -96,11 +97,29 @@ export async function removeAuthenticators() {
   }
 }
 
+// A one-time enrolment code for the account, as the console admin would issue it
+// (control W12). Written straight to the test database; returns the code to type.
+export async function enrolmentCodeFor(email: string) {
+  const code = `E2E${Array.from({ length: 9 }, () => "0123456789ABCDEFGHJKMNPQRSTVWXYZ"[Math.floor(Math.random() * 32)]).join("")}`;
+  const sql = testDb();
+  try {
+    const [user] = await sql`select id from users where email = ${email}`;
+    await sql`delete from passkey_enrolment_codes where user_id = ${user.id} and used_at is null`;
+    await sql`insert into passkey_enrolment_codes (id, user_id, expires_at)
+      values (${codeId(code)}, ${user.id}, now() + interval '15 minutes')`;
+  } finally {
+    await sql.end();
+  }
+  return code;
+}
+
+// Password sign-in, then enrolment with an enrolment code (controls W7, W12).
 export async function enrolPasskey(page: Page) {
   await signIn(page, DEMO.email);
   await expectSignedIn(page, DEMO.name);
   await page.goto("/account/passkeys");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Passkeys");
+  await page.getByLabel("Enrolment code").fill(await enrolmentCodeFor(DEMO.email));
   await page.getByRole("button", { name: "Add a passkey" }).click();
   await expect(page.getByRole("main").getByRole("status")).toHaveText("Passkey added.");
 }

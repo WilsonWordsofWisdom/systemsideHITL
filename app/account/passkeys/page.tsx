@@ -7,13 +7,15 @@ import { EnrolButton } from "./enrol-button";
 
 // Passkey setup, the approver "2FA" (FR6, FR7; design.md 4.3).
 export default async function PasskeysPage() {
-  const { user, csrf } = await requireSession();
+  const { user, csrf, session } = await requireSession();
   const rows = await getDb()
     .select({ id: passkeys.id, createdAt: passkeys.createdAt, transports: passkeys.transports })
     .from(passkeys)
     .where(eq(passkeys.userId, user.id))
     .orderBy(desc(passkeys.createdAt));
   const open = passkeyEnrolmentOpen();
+  // Without a passkey sign-in, adding a passkey needs an enrolment code (gap H1).
+  const needsCode = rows.length === 0 || session.signinMethod !== "passkey";
   const date = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" });
 
   return (
@@ -62,7 +64,7 @@ export default async function PasskeysPage() {
         )}
       </section>
 
-      <EnrolButton csrf={csrf} disabled={!open} />
+      <EnrolButton csrf={csrf} disabled={!open} needsCode={needsCode} />
     </>
   );
 }
