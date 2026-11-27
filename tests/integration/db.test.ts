@@ -49,6 +49,7 @@ describe("database", () => {
       "oauth_codes",
       "oauth_refresh_tokens",
       "oauth_tokens",
+      "passkey_enrolment_codes",
       "passkeys",
       "poppy_join_codes",
       "poppy_jtis",

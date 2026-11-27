@@ -40,13 +40,14 @@ export function shortAgent(ua: string | null): string {
 
 export const shortId = (id: string | null, n = 8) => (id ? `${id.slice(0, n)}…` : "–");
 
-export function ObserveBanner() {
+export function ObserveBanner({ until }: { until: Date }) {
   return (
     <p
       role="status"
       className="mb-4 rounded-xl bg-warning-container px-6 py-3 text-on-warning-container"
     >
-      Observe mode: decisions are logged but nothing is blocked.
+      Observe mode: decisions are logged but nothing is blocked. Enforcement resumes by itself at{" "}
+      {until.toISOString().replace("T", " ").slice(0, 16)} UTC.
     </p>
   );
 }

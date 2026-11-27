@@ -342,7 +342,7 @@ Every security control and check implemented on the system side. Nothing is buil
 | C3 | Fail closed: classifier or policy error becomes `gate` (or `deny` for critical actions), never `allow` | guard | Fault-injection unit test (Phase 2) |
 | C4 | A test fails the build if any mutating route or MCP tool has no policy entry; at runtime an unlisted mutating action is denied. The spec's `default: allow` applies only to routes explicitly marked read-only (design change from spec) | policy + guard + CI test | Coverage test; unit test that an unknown action is denied (Phase 2) |
 | C5 | Ownership check on every resource access; users can only touch their own applications and contact details | service layer | Cross-user isolation tests with the second seeded user (Phase 1) |
-| C6 | `HITL_MODE=observe` cannot be enabled unless an explicit env var allows it, and the console shows a persistent banner while on | config loader, console | Unit test on config; e2e banner check (Phase 3) |
+| C6 | `HITL_MODE=observe` cannot be enabled unless an explicit env var allows it and an end time (`HITL_OBSERVE_UNTIL`, at most 24 hours ahead) is set; the gate is enforced again by itself at that time. While it is on, the console and every page show a banner with the end time (gap H6) | config loader, guard callers, console, root layout | Unit tests on config and the effective mode; e2e banner checks (Phase 3; H6 fix 2026-11-27) |
 
 ### 7.2 Tickets
 
@@ -369,6 +369,7 @@ Every security control and check implemented on the system side. Nothing is buil
 | W5 | The agent can't satisfy the passkey prompt; ticket stays pending | approve flow | T4 (Phase 2, live in Phase 6) |
 | W6 | `/device` approval needs its own passkey assertion or device-bound secret | `/api/hitl/[ticketId]/approve` (shared with `/approve`; ticket-bound UV assertion) | T9 (Phase 5) |
 | W7 | Passkey enrolment closed during test runs; when open it needs fresh sign-in and is audited with actor class and attestation data | enrolment route | Test that a password session can't add a passkey when closed (Phase 1) |
+| W12 | A password alone never adds a passkey (gap H1). A first passkey, or one added without a passkey sign-in, needs a one-time enrolment code that the console admin issues for one account (15 minutes, single use, stored hashed, wrong codes rate limited). A user who already has a passkey can add another after signing in with it | enrolment routes, `lib/auth/enrolment-codes.ts`, console | Integration tests for codes and the rule; e2e: refusal without a code, enrolment with a console-issued code, second passkey after passkey sign-in (H1 fix 2026-11-27) |
 | W8 | Virtual authenticator permitted only when `NODE_ENV=test` | config + test harness | Startup assertion (Phase 1) |
 | W9 | OTP fallback approval is flagged as weaker in logs and is off unless enabled | approve route | Unit test (Phase 2) |
 | W10 | Approval page sends `frame-ancestors 'none'` and `X-Frame-Options: DENY` so it can't be clickjacked | security headers | Header test (Phase 1) |

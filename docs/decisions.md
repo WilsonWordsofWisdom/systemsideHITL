@@ -379,6 +379,27 @@ Migration `0004` was applied to production before PR #6 was merged (5 migrations
 **Why:** Poppy 1.0 sections 3.2, 4, 5, 6; FR42-FR47; controls PP5-PP10.
 **Known test flakiness (not new):** the approval-timing end-to-end tests (handoff panel, auto-resume, full journey) occasionally time out in full-suite runs; the same happens on `main` before Phase 7. They pass on their own and on rerun.
 
+## 2026-11-27 — Passkey enrolment needs a code or a passkey; observe mode ends by itself (gaps H1, H6)
+
+- **Context:** the review of how the passkey step is enforced found two gaps.
+  - **H1:** while `PASSKEY_ENROLMENT=open`, any fresh password sign-in could enrol any authenticator. An agent given the password could then enrol its own passkey and approve everything itself. The Phase 6 Muse runs showed covert agents score 0 on behaviour signals, so blocking only detected agents would not help.
+  - **H6:** `HITL_MODE=observe` turned the gate off for everyone until someone remembered to switch it back.
+- **Decision (owner, 2026-11-27):**
+  - **First passkey:** needs a one-time enrolment code, issued in the console for one account. It lasts 15 minutes, works once, is stored hashed, and is given out of band.
+  - **Another passkey:** needs a passkey sign-in in the last 10 minutes (or a code, for recovery).
+  - **A supplied code is always checked.**
+  - **Wrong codes:** five in 10 minutes lock code entry for 10 minutes.
+  - **Observe mode:** also needs `HITL_OBSERVE_UNTIL`, at most 24 hours ahead, after which the gate is enforced again without a redeploy. A test-mode notice shows on every page while it is on.
+- **Alternatives considered:**
+  - keeping the open window for first passkeys, rejected: an agent with the password could still enrol first;
+  - a separate passkey confirmation at enrolment, deferred: stronger against an agent riding a fresh session, about a day more;
+  - observe only for registered runs, deferred: about a day, and a registration step before each run.
+- **Not covered:**
+  - attestation or authenticator allow-lists: synced passkeys send no attestation;
+  - notifying the person of a new passkey;
+  - a cooling-off period before a new passkey can approve.
+- **Production:** migration `0007_h1_enrolment_codes` (one table, RLS on) must be applied before this is deployed.
+
 ## Open
 - Owner sets `ADMIN_SECRET` (a long random value) in `.env.local` and in Vercel Production before using the console.
 - Optional before Phase 6: GitHub Actions e2e run against the Supabase test project (exercises the pooler).

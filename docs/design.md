@@ -83,6 +83,7 @@ Content width: 840 px for forms and journey pages; full width for the console. N
 | Component | Material 3 basis | Notes |
 |---|---|---|
 | **Prototype banner** | Banner | On every page, above the app bar: "Prototype for testing, not a real government service." Warning container colours. |
+| **Test-mode notice** | Banner | Only while observe mode is in force, under the prototype banner on every page: "Test mode: approvals are not being enforced until <time> UTC." Error container colours (C6, gap H6). |
 | **Top app bar** | Small top app bar | Text mark "DG" plus "DemoGov Permits". Signed-in nav: Applications, Account, Sign out. |
 | **Buttons** | Filled, outlined, text | One filled (primary) button per view. Decline uses an outlined button with error-coloured text. |
 | **Text fields** | Outlined text field | Visible label above; helper and error text below; error shown with colour and text. |
@@ -116,6 +117,7 @@ Each screen lists its purpose, hierarchy, states and requirements. The mockups s
 
 - **Purpose:** enrol the approver passkey (the "2FA setup") (FR7).
 - **States:** empty ("You haven't added a passkey yet." plus "Add a passkey"); enrolled (list of passkeys with device and date); enrolment closed (info alert "Adding passkeys is turned off. New passkeys can't be added during test runs. Passkeys you already have still work." with the button disabled); error (enrolment cancelled or failed, with retry).
+- **Enrolment code (gap H1, W12):** when the person has no passkey, or signed in with the password, an "Enrolment code" field (with help text "You need a one-time code from the service administrator to add a passkey without signing in with one.") appears above "Add a passkey". After a passkey sign-in the field is hidden. Refusals use the error alert: missing code, wrong or used code, too many wrong codes, or "sign in with one of your passkeys".
 
 ### 4.4 Journey step pattern (mockup 4: Review)
 
@@ -149,7 +151,7 @@ The form area is replaced in place; the page heading and step indicator stay so 
 ### 4.8 Console `/console` (mockup 8)
 
 - **Purpose:** judge each test run (FR39, FR40). Admin only. Desktop-first.
-- **Hierarchy:** observe-mode banner (only when `HITL_MODE=observe`); filter bar (run, agent label, session, ground-truth label) with Export CSV, Export JSON and Reset demo data; request table (time, route, agent / UA, class chip, signals summary, action, decision chip, ticket, outcome) with the weights version in the caption; detail panel with tabs: Ticket (timeline: created by actor, approved by method and time to approve, consumed by session) and Session (login class beside current class, "probable handover" flag, risk-state timeline).
+- **Hierarchy:** observe-mode banner with the time enforcement resumes (only while observe mode is in force); a collapsed "Passkey enrolment code" panel (account email, "Issue code"; the code is shown once with its expiry, W12); filter bar (run, agent label, session, ground-truth label) with Export CSV, Export JSON and Reset demo data; request table (time, route, agent / UA, class chip, signals summary, action, decision chip, ticket, outcome) with the weights version in the caption; detail panel with tabs: Ticket (timeline: created by actor, approved by method and time to approve, consumed by session) and Session (login class beside current class, "probable handover" flag, risk-state timeline).
 - **States:** empty run ("No requests in this run yet"); live (new rows appear at the top); reset confirmation dialog (the one dialog in the product; admin only); export in progress.
 - **Rules:** "approved, not redeemed" tickets are highlighted; `wrong_session` outcomes are shown distinctly from agent errors.
 

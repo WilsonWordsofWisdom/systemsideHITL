@@ -66,12 +66,27 @@ export async function consumeChallenge(
   return row ?? null;
 }
 
-export type EnrolmentCheck =
-  { ok: true } | { ok: false; reason: "enrolment_closed" | "signin_not_fresh" | "approval_only" };
+export type EnrolmentRefusal =
+  | "enrolment_closed"
+  | "signin_not_fresh"
+  | "approval_only"
+  | "code_required"
+  | "passkey_signin_required";
 
+export type EnrolmentCheck =
+  { ok: true; via: "code" | "passkey" } | { ok: false; reason: EnrolmentRefusal };
+
+// Who may add a passkey (controls W7, W12; gap H1). Beyond the PASSKEY_ENROLMENT
+// switch and a fresh, full sign-in, the person needs either a valid enrolment
+// code from the console admin, or an existing passkey: a user who already has one
+// must have signed in with it. A password alone, which an agent may have been
+// given, never adds a passkey.
 export function enrolmentAllowed(input: {
   open: boolean;
-  session: { createdAt: Date; approvalOnly: boolean };
+  session: { createdAt: Date; approvalOnly: boolean; signinMethod: string };
+  hasPasskeys: boolean;
+  // A code the caller has already checked is valid for this user now.
+  validCode: boolean;
   now?: Date;
 }): EnrolmentCheck {
   const now = input.now ?? new Date();
@@ -80,7 +95,11 @@ export function enrolmentAllowed(input: {
   if (now.getTime() - input.session.createdAt.getTime() > FRESH_SIGNIN_MS) {
     return { ok: false, reason: "signin_not_fresh" };
   }
-  return { ok: true };
+  if (input.validCode) return { ok: true, via: "code" };
+  if (input.hasPasskeys && input.session.signinMethod === "passkey") {
+    return { ok: true, via: "passkey" };
+  }
+  return { ok: false, reason: input.hasPasskeys ? "passkey_signin_required" : "code_required" };
 }
 
 export const toBase64Url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");

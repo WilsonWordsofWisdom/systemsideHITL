@@ -113,13 +113,13 @@ Each requirement is detailed in [architecture.md](architecture.md); control IDs 
 - **FR1** One server-side guard is called by every mutating route and every MCP tool; no gated action runs without it (C1). A CI test fails if a mutating route or tool has no policy entry; an unlisted mutating action is denied at runtime (C4). Read-only routes are marked explicitly.
 - **FR2** Policy is a YAML file loaded at boot and shown read-only in the console; decisions are `allow`, `gate` or `deny` per action and actor class (section 4 table).
 - **FR3** The guard fails closed on classifier or policy error (C3).
-- **FR4** `HITL_MODE=observe` logs decisions without blocking; it needs an explicit env var and shows a console banner (C6).
+- **FR4** `HITL_MODE=observe` logs decisions without blocking; it needs an explicit env var and an end time (`HITL_OBSERVE_UNTIL`, at most 24 hours ahead), after which the gate is enforced again by itself. The console and every page show a banner with the end time while it is on (C6).
 
 ### 8.2 Sign-in, landing page and session identity
 
 - **FR5** A neutral landing page explains what the site is and lists the journey; it contains no instructions aimed at models. With `AGENT_HINTS=on` it also mentions human approval and links `/llms.txt` and `/agents.md`.
 - **FR6** `/login` offers password and passkey sign-in. How each agent gets signed in is **left to the tester** working with that agent; the site prescribes nothing. There is **no second factor at sign-in**. The "2FA setup" page enrols the **approver passkey** used to approve gated actions.
-- **FR7** `PASSKEY_ENROLMENT=closed` during test runs; the owner enrols approver passkeys beforehand on real devices; every enrolment attempt is audited (W7).
+- **FR7** `PASSKEY_ENROLMENT=closed` during test runs; the owner enrols approver passkeys beforehand on real devices; every enrolment attempt is audited (W7). A password alone never adds a passkey: a first passkey needs a one-time enrolment code issued by the console admin, and adding another needs a passkey sign-in or a code (W12).
 - **FR8** An optional "I'm an AI agent acting for someone" checkbox (`SELF_DECLARE_UI`, on by default) is a signal, never a trust grant.
 - **FR9** Login records signals and a login-time actor class on the session; enforcement never relies on it.
 - **FR10** Idle timeout 30 min, absolute lifetime 8 h; session rotated at sign-in; passkey sign-in on `/login` ends the user's earlier sessions (reset path); `/approve` and `/device` use an **approval-only session** that can approve tickets, cannot act on the journey and ends no other session (S8, S9, W11).
@@ -221,6 +221,7 @@ Environment: `APP_ORIGIN`, `RP_ID`, `DATABASE_URL` (pooled), `DIRECT_DATABASE_UR
 | Flag | Values | Baseline |
 |---|---|---|
 | `HITL_MODE` | enforce / observe | observe first |
+| `HITL_OBSERVE_UNTIL` | date and time with time zone, at most 24 h ahead | required with observe |
 | `AGENT_HINTS` | on / off | off |
 | `SELF_DECLARE_UI` | on / off | on |
 | `HITL_HANDOFF_MODE` | panel / redirect / both | panel |

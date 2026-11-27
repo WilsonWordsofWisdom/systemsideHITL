@@ -247,6 +247,24 @@ export const webauthnChallenges = pgTable(
   (t) => [index("webauthn_challenges_expiry_idx").on(t.expiresAt)],
 ).enableRLS();
 
+// One-time passkey enrolment codes issued by the console admin (gap H1, control
+// W12). A user's first passkey, or one added without a passkey sign-in, needs a
+// code. Only the SHA-256 of the normalised code is stored; a code is for one
+// account, lasts 15 minutes and works once.
+export const passkeyEnrolmentCodes = pgTable(
+  "passkey_enrolment_codes",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [index("passkey_enrolment_codes_user_idx").on(t.userId)],
+).enableRLS();
+
 // Test runs and their ground truth, set by the tester in the console (FR16,
 // FR40). Test metadata only: the classifier never reads this table (A6).
 export const runs = pgTable("runs", {

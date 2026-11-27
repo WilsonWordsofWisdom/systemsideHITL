@@ -1,4 +1,5 @@
-// WebAuthn challenge store (controls W1, W2) and enrolment rules (FR7, control W7).
+// WebAuthn challenge store (controls W1, W2) and enrolment rules (FR7, controls W7,
+// W12; gap H1).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CHALLENGE_TTL_MS,
@@ -52,25 +53,47 @@ describe("challenges", () => {
 });
 
 describe("enrolmentAllowed", () => {
-  const session = { createdAt: t0, approvalOnly: false };
-  it("allows a fresh sign-in while enrolment is open", () => {
-    expect(enrolmentAllowed({ open: true, session, now: at(60_000) })).toEqual({ ok: true });
+  const session = { createdAt: t0, approvalOnly: false, signinMethod: "password" };
+  const rule = { open: true, session, hasPasskeys: false, validCode: false, now: at(60_000) };
+  it("allows a fresh sign-in with a valid enrolment code (W12)", () => {
+    expect(enrolmentAllowed({ ...rule, validCode: true })).toEqual({ ok: true, via: "code" });
   });
-  it("refuses while enrolment is closed (J12)", () => {
-    expect(enrolmentAllowed({ open: false, session, now: at(60_000) })).toEqual({
+  it("needs a code for a first passkey after a password sign-in (H1)", () => {
+    expect(enrolmentAllowed(rule)).toEqual({ ok: false, reason: "code_required" });
+  });
+  it("needs a passkey sign-in, or a code, to add another passkey (H1)", () => {
+    expect(enrolmentAllowed({ ...rule, hasPasskeys: true })).toEqual({
+      ok: false,
+      reason: "passkey_signin_required",
+    });
+    expect(
+      enrolmentAllowed({
+        ...rule,
+        hasPasskeys: true,
+        session: { ...session, signinMethod: "passkey" },
+      }),
+    ).toEqual({ ok: true, via: "passkey" });
+  });
+  it("refuses while enrolment is closed, even with a code (J12)", () => {
+    expect(enrolmentAllowed({ ...rule, open: false, validCode: true })).toEqual({
       ok: false,
       reason: "enrolment_closed",
     });
   });
   it("refuses when the sign-in is not fresh", () => {
-    expect(enrolmentAllowed({ open: true, session, now: at(FRESH_SIGNIN_MS + 1) })).toEqual({
+    expect(enrolmentAllowed({ ...rule, validCode: true, now: at(FRESH_SIGNIN_MS + 1) })).toEqual({
       ok: false,
       reason: "signin_not_fresh",
     });
   });
   it("refuses approval-only sessions", () => {
     expect(
-      enrolmentAllowed({ open: true, session: { ...session, approvalOnly: true }, now: t0 }),
+      enrolmentAllowed({
+        ...rule,
+        validCode: true,
+        session: { ...session, signinMethod: "passkey", approvalOnly: true },
+        hasPasskeys: true,
+      }),
     ).toEqual({ ok: false, reason: "approval_only" });
   });
 });
